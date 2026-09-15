@@ -1,0 +1,119 @@
+# docwarden · GitHub Action
+#
+# 直接在 GitHub 里用，不用把脚本拷进你的仓库：
+#
+#   - uses: xiaoanbucai/docwarden@v1
+#     with:
+#       mode: incremental
+#     env:
+#       LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+#       LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+#
+# 前提只有一件事：**你的仓库根目录要有 .knowledge.mjs**。
+# 拿不到的话跑一次 `npx docwarden init --dry-run` 看会生成什么，或者直接
+# `npx docwarden init` 让它在你的仓库里落一份（那份也是给 vendor 模式用的）。
+#
+# 两种接入方式的取舍见 README「引用模式 / vendor 模式」一节：
+#   · 引用模式（就是本文件）—— 一条 uses 搞定，工具升级不用改你的仓库；
+#   · vendor 模式 —— 脚本在你的仓库里，CI 不需要联网取工具，内网也能跑。
+#
+# 完整可抄的工作流示例：docs-kit/ci/github-action-only.yml
+
+name: docwarden
+description: 从代码变更生成/刷新模块文档，并把每篇的确认状态一起管住
+
+author: docwarden
+
+branding:
+  icon: book-open
+  color: blue
+
+inputs:
+  mode:
+    description: >
+      incremental（主干合并后刷新模块文档）| preview（PR 影响预览，不写文件）|
+      chapter（版本演进章节）| audit（巡检漂移）
+    required: false
+    default: incremental
+  base:
+    description: 比对起点，如 HEAD~5 或某个 SHA。留空时按 mode 自动推断。
+    required: false
+    default: ""
+  version:
+    description: chapter 模式用，写进 history/ 的版本号，如 v1.2.0。
+    required: false
+    default: ""
+  fix:
+    description: audit 模式下直接修复漂移（"true" 才生效）。
+    required: false
+    default: "false"
+  root:
+    description: 目标仓库路径。留空用当前工作区。
+    required: false
+    default: ""
+  api_key:
+    description: 模型服务的 Key。**建议用 env 传**，避免出现在日志的 step 参数里。
+    required: false
+    default: ""
+  base_url:
+    description: 模型接口地址（OpenAI 兼容）。**留空**就用仓库 .knowledge.mjs 里的配置。
+    required: false
+    default: ""
+  model:
+    description: 模型名。**留空**就用仓库 .knowledge.mjs 里的配置。
+    required: false
+    default: ""
+
+outputs:
+  preview_path:
+    description: preview 模式下产出的文件路径（一般是 .docs-preview.md）
+    value: ${{ steps.run.outputs.preview_path }}
+
+runs:
+  using: composite
+  steps:
+    - name: 检查 Node 版本
+      shell: bash
+      run: |
+        # 脚本用到内置 fetch 与 crypto，需要 Node 18+。runner 自带的那个就够。
+        node -e 'const m=+process.versions.node.split(".")[0]; if(m<18){console.error("需要 Node 18+，当前 "+process.version);process.exit(1)}; console.log("Node "+process.version)'
+
+    - name: 生成 / 刷新文档
+      id: run
+      shell: bash
+      env:
+        # 刻意用「传进来 + shell 兜底」的写法，而不是 ${{
+        #   env.X || inputs.y }} 那种表达式：
+        # composite action 里上下文求值有版本差异，踩过一次就很难查。
+        # 调用方在 step 上写了 env: LLM_API_KEY 的话，它本来就已经在环境里了。
+        INPUT_API_KEY: ${{ inputs.api_key }}
+        INPUT_BASE_URL: ${{ inputs.base_url }}
+        INPUT_MODEL: ${{ inputs.model }}
+      run: |
+        set -euo pipefail
+
+        export LLM_API_KEY="${LLM_API_KEY:-$INPUT_API_KEY}"
+        export LLM_BASE_URL="${LLM_BASE_URL:-$INPUT_BASE_URL}"
+        export LLM_MODEL="${LLM_MODEL:-$INPUT_MODEL}"
+
+        if [ -z "${LLM_BASE_URL:-}" ]; then
+          echo "::error::没拿到 LLM_BASE_URL。请在你的 step 上写 env: LLM_BASE_URL=\${{ secrets.LLM_BASE_URL }}"
+          exit 1
+        fi
+
+        # 引用模式下脚本跑在 Action 自己的目录里，你的仓库在工作区 —— 必须显式指过去。
+        ROOT="${{ inputs.root }}"
+        if [ -z "$ROOT" ]; then ROOT="${{ github.workspace }}"; fi
+
+        ARGS=(--root "$ROOT" --mode "${{ inputs.mode }}")
+        if [ -n "${{ inputs.base }}" ]; then ARGS+=(--base="${{ inputs.base }}"); fi
+        if [ -n "${{ inputs.version }}" ]; then ARGS+=(--version="${{ inputs.version }}"); fi
+        if [ "${{ inputs.fix }}" = "true" ]; then ARGS+=(--fix); fi
+
+        echo "docwarden：${ARGS[*]}"
+        node "${{ github.action_path }}/docs-kit/scripts/docs-update.mjs" "${ARGS[@]}"
+
+        # 把预览文件路径带出去，方便下一步贴评论
+        if [ -f "$ROOT/.docs-preview.md" ]; then
+          echo "preview_path=$ROOT/.docs-preview.md" >> "$GITHUB_OUTPUT"
+        fi

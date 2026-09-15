@@ -1,0 +1,1005 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>文档守护 · docwarden</title>
+<style>
+  :root{
+    --bg:#f7f7f5; --panel:#ffffff; --ink:#1d1d1b; --ink2:#5f5e5a; --ink3:#8f8e88;
+    --line:#e4e3dd; --line2:#d3d1c7;
+    --accent:#0f6e56; --accent-bg:#e1f5ee; --accent-line:#9fe1cb;
+    --warn:#854f0b; --warn-bg:#faeeda; --warn-line:#fac775;
+    --danger:#a32d2d; --danger-bg:#fcebeb; --danger-line:#f7c1c1;
+    --radius:10px;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  .top{
+    position:sticky; top:0; z-index:10; background:var(--panel);
+    border-bottom:1px solid var(--line); padding:14px 24px;
+    display:flex; align-items:center; gap:20px; flex-wrap:wrap;
+  }
+  .brand{font-size:15px; font-weight:600; letter-spacing:.3px}
+  .brand span{color:var(--ink3); font-weight:400; font-size:13px; margin-left:8px}
+  nav{display:flex; gap:4px; margin-left:auto; flex-wrap:wrap}
+  nav button{
+    border:1px solid transparent; background:transparent; color:var(--ink2);
+    padding:6px 12px; border-radius:8px; cursor:pointer; font-size:13px; font-family:inherit;
+  }
+  nav button:disabled{opacity:.4; cursor:not-allowed}
+  nav button.on{background:var(--accent-bg); color:var(--accent); border-color:var(--accent-line)}
+  nav button:not(:disabled):not(.on):hover{background:#f1efe8}
+  main{max-width:1080px; margin:0 auto; padding:24px}
+  .step{display:none}
+  .step.on{display:block}
+  h2{font-size:17px; margin:0 0 6px}
+  .sub{color:var(--ink2); margin:0 0 20px; font-size:13.5px}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:18px; margin-bottom:16px}
+  label{display:block; font-size:12.5px; color:var(--ink2); margin-bottom:6px}
+  input[type=text],input[type=password],input[type=number],select{
+    width:100%; padding:9px 11px; border:1px solid var(--line2); border-radius:8px;
+    font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; background:#fff; color:var(--ink);
+  }
+  input:focus,select:focus{outline:none; border-color:var(--accent-line); box-shadow:0 0 0 3px rgba(15,110,86,.08)}
+  .row{display:flex; gap:12px; flex-wrap:wrap}
+  .row>div{flex:1; min-width:180px}
+  button.primary{
+    background:var(--accent); color:#fff; border:none; padding:10px 20px;
+    border-radius:8px; cursor:pointer; font-size:13.5px; font-weight:500; font-family:inherit;
+  }
+  button.primary:disabled{background:#b4b2a9; cursor:not-allowed}
+  button.ghost{
+    background:#fff; color:var(--ink); border:1px solid var(--line2); padding:9px 16px;
+    border-radius:8px; cursor:pointer; font-size:13px; font-family:inherit;
+  }
+  button.ghost:hover{background:#f1efe8}
+  .actions{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:16px}
+  .hint{font-size:12.5px; color:var(--ink3)}
+  .note{border-left:3px solid var(--accent-line); background:var(--accent-bg); padding:12px 14px; border-radius:0 8px 8px 0; font-size:13px; color:var(--ink); margin-bottom:16px}
+  .note.warn{border-left-color:var(--warn-line); background:var(--warn-bg)}
+  .note.err{border-left-color:var(--danger-line); background:var(--danger-bg); color:var(--danger)}
+  .stats{display:flex; gap:24px; flex-wrap:wrap; margin-bottom:16px}
+  .stat b{display:block; font-size:20px; font-weight:600; line-height:1.2}
+  .stat span{font-size:12px; color:var(--ink2)}
+  table{width:100%; border-collapse:collapse; font-size:13px}
+  th,td{text-align:left; padding:9px 10px; border-bottom:1px solid var(--line)}
+  th{font-weight:500; color:var(--ink2); font-size:12.5px; background:#fafaf8; position:sticky; top:0}
+  td.num{text-align:right; font-variant-numeric:tabular-nums; color:var(--ink2)}
+  .mods{max-height:46vh; overflow:auto; border:1px solid var(--line); border-radius:8px}
+  .mods input.mname{padding:5px 8px; font-size:13px}
+  .sample{color:var(--ink3); font-size:12px; font-family:ui-monospace,Menlo,Consolas,monospace}
+  .pill{display:inline-block; padding:2px 8px; border-radius:20px; font-size:11.5px; border:1px solid}
+  .pill.wait{color:var(--ink3); border-color:var(--line2); background:#fafaf8}
+  .pill.run{color:var(--accent); border-color:var(--accent-line); background:var(--accent-bg)}
+  .pill.ok{color:var(--accent); border-color:var(--accent-line); background:var(--accent-bg)}
+  .pill.bad{color:var(--danger); border-color:var(--danger-line); background:var(--danger-bg)}
+  .split{display:grid; grid-template-columns:250px 1fr; gap:16px; align-items:start}
+  @media(max-width:820px){.split{grid-template-columns:1fr}}
+  .list{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; max-height:66vh; overflow-y:auto}
+  .list a{display:block; padding:10px 14px; border-bottom:1px solid var(--line); cursor:pointer; font-size:13px; color:var(--ink); text-decoration:none}
+  .list a:hover{background:#fafaf8}
+  .list a.on{background:var(--accent-bg); color:var(--accent); font-weight:500}
+  .list a small{display:block; color:var(--ink3); font-weight:400; font-size:11.5px}
+  .doc{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:24px 28px; max-height:66vh; overflow-y:auto}
+  .doc h1{font-size:20px; margin:.6em 0 .4em}
+  .doc h2{font-size:16px; margin:1.4em 0 .5em; padding-bottom:6px; border-bottom:1px solid var(--line)}
+  .doc h3{font-size:14px; margin:1.2em 0 .4em}
+  .doc code{background:#f1efe8; padding:1px 5px; border-radius:4px; font:12.5px ui-monospace,Menlo,Consolas,monospace}
+  .doc pre{background:#fafaf8; border:1px solid var(--line); border-radius:8px; padding:12px 14px; overflow-x:auto}
+  .doc pre code{background:none; padding:0}
+  .doc table{margin:12px 0}
+  .doc blockquote{margin:12px 0; padding:8px 14px; border-left:3px solid var(--line2); color:var(--ink2); background:#fafaf8}
+  .doc ul,.doc ol{padding-left:22px}
+  .doc hr{border:none; border-top:1px solid var(--line); margin:20px 0}
+  .empty{color:var(--ink3); text-align:center; padding:60px 20px; font-size:13px}
+  .paths{font:12px ui-monospace,Menlo,Consolas,monospace; color:var(--ink2); background:#fafaf8; border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin-top:12px; max-height:150px; overflow:auto}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="brand">文档守护<span>docwarden · 本地界面</span></div>
+  <nav>
+    <button id="nav1" class="on" data-go="1">1 选目录</button>
+    <button id="nav2" disabled data-go="2">2 划模块</button>
+    <button id="nav3" disabled data-go="3">3 生成</button>
+    <button id="nav4" disabled data-go="4">4 预览导出</button>
+  </nav>
+</div>
+
+<main>
+
+  <!-- ---------------------------------------------------- 1 -->
+  <section id="s1" class="step on">
+    <h2>选一个项目目录</h2>
+    <p class="sub">工具会读取该目录下的源码文件，划出候选模块。源码不会离开这台电脑。</p>
+
+    <div class="card">
+      <label for="dir">项目根目录的绝对路径</label>
+      <input type="text" id="dir" placeholder="例如 ~/code/my-app 或 D:\projects\my-app">
+      <div class="actions">
+        <button class="primary" id="btnScan">扫描目录</button>
+        <span class="hint">会自动跳过 node_modules、.git、dist 等目录</span>
+      </div>
+    </div>
+
+    <div class="note">
+      <b>建议第一次拿一个小项目试。</b>比如自己的练习项目、组件库或小程序。<br>
+      不要一上来就扫公司的大型仓库——先看清生成质量，再决定要不要用在正经项目上。
+    </div>
+  </section>
+
+  <!-- ---------------------------------------------------- 2 -->
+  <section id="s2" class="step">
+    <h2>确认模块划分</h2>
+    <p class="sub">模块是文档的最小单位。划得太细会让文档碎片化，太粗会让每次小改动都重生成一大堆。建议一个模块 5～30 个文件、1500 行以内。</p>
+
+    <div id="scanStats" class="stats"></div>
+    <div id="scanNote"></div>
+
+    <div class="card" style="padding:0; overflow:hidden">
+      <div style="display:flex; gap:10px; align-items:center; padding:12px 16px; border-bottom:1px solid var(--line); flex-wrap:wrap">
+        <button class="ghost" id="btnAll">全选</button>
+        <button class="ghost" id="btnNone">全不选</button>
+        <button class="ghost" id="btnBig">只留 1500 行以内</button>
+        <span class="hint" id="selCount" style="margin-left:auto"></span>
+      </div>
+      <div class="mods">
+        <table id="modTable">
+          <thead>
+            <tr>
+              <th style="width:44px"></th>
+              <th>模块名（可改）</th>
+              <th style="width:76px">文档</th>
+              <th style="width:90px">文件数</th>
+              <th style="width:90px">行数</th>
+              <th style="width:34%">包含的文件</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="primary" id="btnToGen" disabled>下一步：配置生成</button>
+      <span class="hint">至少要选一个模块</span>
+    </div>
+  </section>
+
+  <!-- ---------------------------------------------------- 3 -->
+  <section id="s3" class="step">
+    <h2>配置生成</h2>
+    <p class="sub">可以先跑演示模式看流程与排版；要判断真实质量，需要接一个模型。</p>
+
+    <div class="card">
+      <label>生成方式</label>
+      <div class="row" style="margin-bottom:14px">
+        <div>
+          <select id="provider">
+            <option value="mock">演示模式 · 不需要任何配置</option>
+            <option value="openai">真实模型 · OpenAI 兼容接口</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="realCfg" style="display:none">
+        <div class="row" style="margin-bottom:12px">
+          <div>
+            <label>接口地址（baseUrl）</label>
+            <input type="text" id="baseUrl" placeholder="http://127.0.0.1:11434/v1">
+          </div>
+          <div>
+            <label>模型名
+              <button class="ghost" id="btnModels" type="button" style="padding:1px 7px; font-size:11.5px; margin-left:4px">拉取列表</button>
+            </label>
+            <input type="text" id="model" placeholder="qwen3:8b" list="modelList" autocomplete="off">
+            <datalist id="modelList"></datalist>
+          </div>
+        </div>
+        <div class="row" style="margin-bottom:12px">
+          <div>
+            <label>API Key（本地模型可留空；<b>填你自己的</b>）</label>
+            <input type="password" id="apiKey" placeholder="你自己的 key" autocomplete="off" spellcheck="false">
+          </div>
+          <div style="max-width:140px">
+            <label>温度</label>
+            <input type="number" id="temperature" value="0.2" step="0.1" min="0" max="1">
+          </div>
+          <div style="max-width:150px">
+            <label>超时（秒）</label>
+            <input type="number" id="timeoutSec" value="600" step="60" min="10" max="1800">
+          </div>
+          <div style="max-width:170px">
+            <label>最大输出 tokens</label>
+            <input type="number" id="maxTokens" value="4096" step="512" min="256" max="32768">
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+          <span class="hint">快速填入（本地）：</span>
+          <button class="ghost" data-preset="http://127.0.0.1:11434/v1|qwen3:8b">Ollama</button>
+          <button class="ghost" data-preset="http://127.0.0.1:1234/v1|local-model">LM Studio</button>
+          <button class="ghost" data-preset="http://127.0.0.1:8000/v1|Qwen/Qwen3-8B">vLLM</button>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px">
+          <span class="hint">快速填入（云端，需 https）：</span>
+          <button class="ghost" data-preset="https://open.bigmodel.cn/api/paas/v4|glm-4.7-flash">智谱 GLM</button>
+          <button class="ghost" data-preset="https://api.deepseek.com/v1|deepseek-chat">DeepSeek</button>
+          <button class="ghost" data-preset="https://openrouter.ai/api/v1|deepseek/deepseek-r1:free">OpenRouter</button>
+          <button class="ghost" data-preset="https://integrate.api.nvidia.com/v1|moonshotai/kimi-k3">NVIDIA NIM</button>
+        </div>
+        <div class="note" style="margin:14px 0 0">
+          <b>接口和 key 都是使用者自己的，这个工具不代为提供。</b>上面几个按钮只是帮忙少打几个字，
+          <strong>不填就用不了真实模型</strong>（演示模式不需要任何配置）。<br>
+          两件事可以放心：<strong>你的 key 不会被写进任何文件</strong>——不落盘、不进导出的文档、
+          不进会话记录，关掉页面就没了。不放心的话就用一把<strong>只给这个用途的临时 key</strong>，
+          用完去厂商控制台吊销。
+        </div>
+        <div class="note warn" style="margin:14px 0 0">
+          <b>⚠️ 先把这条看完再填云端地址。</b>填了 <span class="mono">https://</span> 开头的公网接口，
+          就意味着<strong>你的源码会被完整发送到那家厂商的服务器上</strong>。本地模型
+          （<span class="mono">127.0.0.1</span>）不存在这个问题。<br>
+          拿 <span class="mono">sample/</span> 这种样例试没问题；<strong>公司项目的代码不要用云端接口跑</strong>，
+          除非你确认过公司安全规定允许。这个工具的设计前提就是「代码不出内网」，别在这里破了它。
+        </div>
+        <div class="note" style="margin:14px 0 0">
+          <b>关于等待时间。</b>带推理能力的模型（名字里常见 reason / thinking / r1 字样）很慢——
+          实测<strong>连 20 行的模块也要 2 分半</strong>，耗时主要花在推理上而非读代码。
+          换成不推理的模型通常快好几倍。另外：超时别低于 <span class="mono">600</span> 秒；
+          模块要切小，别指望一个大模块一次跑完；生成时进度条是逐行推进的，<strong>没有卡死，等着就行</strong>。
+        </div>
+        <div class="note" style="margin:14px 0 0">
+          <b>连本地模型有两个坑。</b>一是地址要带 <span class="mono">/v1</span> 后缀；二是 ollama 默认不接受来自网页的跨域请求，需要先退出 ollama 再执行
+          <span class="mono">set OLLAMA_ORIGINS=*</span>（Windows）或 <span class="mono">export OLLAMA_ORIGINS='*'</span> 后重启。<br>
+          本工具已经把请求放在本地服务里转发，所以更常见的问题是<strong>模型服务本身没启动</strong>。
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap">
+        <button class="primary" id="btnGen">开始生成</button>
+        <button class="ghost" id="btnStop" disabled>停止</button>
+        <button class="ghost" id="btnRetry" disabled style="display:none">重试失败项</button>
+        <span class="hint" id="genProgress"></span>
+      </div>
+      <div id="genFail"></div>
+      <div class="mods" style="margin-top:14px; max-height:40vh">
+        <table id="genTable">
+          <thead>
+            <tr>
+              <th>模块</th>
+              <th style="width:90px">状态</th>
+              <th style="width:110px">代码 / 文档</th>
+              <th style="width:80px">耗时</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="primary" id="btnToPreview" disabled>下一步：预览结果</button>
+      <span class="hint">失败的可以直接跳过，成功的模块不会重跑——用上面的「重试失败项」补齐即可</span>
+    </div>
+  </section>
+
+  <!-- ---------------------------------------------------- 4 -->
+  <section id="s4" class="step">
+    <h2>预览与导出</h2>
+    <p class="sub">导出只会写入项目里的 <span class="mono">docs/current/</span>，不会碰任何源码。</p>
+
+    <div class="split">
+      <div>
+        <div class="list" id="resultList"></div>
+      </div>
+      <div>
+        <div class="doc" id="docView"><div class="empty">左侧选一个模块看内容</div></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div id="exportInfo" class="hint">尚未导出。</div>
+      <div class="paths" id="exportPaths" style="display:none"></div>
+      <div class="actions">
+        <button class="primary" id="btnExport">导出到项目 docs 目录</button>
+        <span class="hint" id="exportTarget"></span>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+        <b style="font-size:14px">文档现状</b>
+        <span class="hint" id="statusSummary"></span>
+        <input type="text" id="verifyBy" placeholder="确认人（可留空）" style="max-width:160px">
+        <button class="ghost" id="btnCheck">重新检查</button>
+      </div>
+      <div id="statusList"><div class="empty">先扫描一个项目</div></div>
+      <div class="note" style="margin:12px 0 0">
+        <b>为什么要有这一栏。</b>生成的文档默认是<strong>候选</strong>——没人看过，不该被当成结论。
+        确认过之后才会变成<strong>已验证</strong>。之后只要<strong>源码或正文任一变过</strong>，
+        那条确认就自动作废：源码变了标<strong>已失效</strong>，正文重新生成则退回<strong>候选</strong>。
+        这样文档库就不会悄悄攒下一堆没人负责、也没人知道过没过期的内容。
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+
+const S = {
+  dir: '',
+  modules: [],        // 候选模块
+  small: [],          // 行数过少、默认不勾的分组
+  picked: new Set(),
+  docOf: {},          // 模块名 → 文档现状（待生成/候选/已验证/已失效）
+  results: [],        // { name, markdown, ok, error, stats, lines, fileCount, files, provider, model }
+  current: null,
+  running: false,
+  stop: false,
+};
+
+// ------------------------------------------------------------ 会话留存
+// 生成结果以前只活在内存里：刷新页面、服务重启、误关标签页，跑完的文档就没了，
+// 而真实模型一个模块要两三分钟。这里把结果落到 localStorage，刷新后可续。
+const SKEY = 'docwarden.session.v1';
+
+function saveSession() {
+  try {
+    localStorage.setItem(SKEY, JSON.stringify({
+      dir: S.dir,
+      modules: S.modules,
+      small: S.small,
+      picked: [...S.picked],
+      results: S.results,
+      at: Date.now(),
+    }));
+  } catch (e) {
+    // 配额满了（项目特别大时可能）也不该让主流程崩掉
+    console.warn('会话保存失败：' + e.message);
+  }
+}
+
+function loadSession() {
+  try { return JSON.parse(localStorage.getItem(SKEY) || 'null'); } catch { return null; }
+}
+
+function clearSession() {
+  try { localStorage.removeItem(SKEY); } catch { /* 忽略 */ }
+}
+
+// ------------------------------------------------------------ 极简 Markdown
+
+function mdToHtml(src) {
+  const lines = String(src).split('\n');
+  const out = [];
+  let i = 0, inCode = false, codeBuf = [], listBuf = [], listType = '';
+
+  const flushList = () => {
+    if (!listBuf.length) return;
+    out.push('<' + listType + '>' + listBuf.map((t) => '<li>' + inline(t) + '</li>').join('') + '</' + listType + '>');
+    listBuf = []; listType = '';
+  };
+  const inline = (t) => esc(t)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>');
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    if (/^```/.test(line)) {
+      if (inCode) { out.push('<pre><code>' + esc(codeBuf.join('\n')) + '</code></pre>'); codeBuf = []; inCode = false; }
+      else { flushList(); inCode = true; }
+      i++; continue;
+    }
+    if (inCode) { codeBuf.push(line); i++; continue; }
+
+    if (/^\s*$/.test(line)) { flushList(); i++; continue; }
+
+    const h = line.match(/^(#{1,4})\s+(.*)$/);
+    if (h) { flushList(); const lv = h[1].length; out.push('<h' + lv + '>' + inline(h[2]) + '</h' + lv + '>'); i++; continue; }
+
+    if (/^\s*([-*+]|\d+\.)\s+/.test(line)) {
+      const ordered = /^\s*\d+\./.test(line);
+      if (listType && ((ordered && listType !== 'ol') || (!ordered && listType !== 'ul'))) flushList();
+      listType = ordered ? 'ol' : 'ul';
+      listBuf.push(line.replace(/^\s*([-*+]|\d+\.)\s+/, ''));
+      i++; continue;
+    }
+
+    if (/^\s*>\s?/.test(line)) {
+      flushList();
+      const buf = [];
+      while (i < lines.length && /^\s*>\s?/.test(lines[i])) { buf.push(lines[i].replace(/^\s*>\s?/, '')); i++; }
+      out.push('<blockquote>' + buf.map(inline).join('<br>') + '</blockquote>');
+      continue;
+    }
+
+    if (/^\s*-{3,}\s*$/.test(line)) { flushList(); out.push('<hr>'); i++; continue; }
+
+    if (/^\s*\|/.test(line) && i + 1 < lines.length && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1])) {
+      flushList();
+      const cells = (r) => r.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
+      const head = cells(line);
+      i += 2;
+      const body = [];
+      while (i < lines.length && /^\s*\|/.test(lines[i])) { body.push(cells(lines[i])); i++; }
+      out.push('<table><thead><tr>' + head.map((c) => '<th>' + inline(c) + '</th>').join('') + '</tr></thead><tbody>'
+        + body.map((r) => '<tr>' + r.map((c) => '<td>' + inline(c) + '</td>').join('') + '</tr>').join('')
+        + '</tbody></table>');
+      continue;
+    }
+
+    flushList();
+    out.push('<p>' + inline(line) + '</p>');
+    i++;
+  }
+  flushList();
+  if (inCode && codeBuf.length) out.push('<pre><code>' + esc(codeBuf.join('\n')) + '</code></pre>');
+  return out.join('\n');
+}
+
+// ------------------------------------------------------------ 步骤
+
+function go(n) {
+  document.querySelectorAll('.step').forEach((el) => el.classList.remove('on'));
+  $('s' + n).classList.add('on');
+  document.querySelectorAll('nav button').forEach((b) => b.classList.toggle('on', b.dataset.go === String(n)));
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+document.querySelectorAll('nav button').forEach((b) => {
+  b.addEventListener('click', () => { if (!b.disabled) go(Number(b.dataset.go)); });
+});
+
+async function api(pathname, body) {
+  const r = await fetch(pathname, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return r.json();
+}
+
+// ------------------------------------------------------------ 1 扫描
+
+$('btnScan').addEventListener('click', async () => {
+  const dir = $('dir').value.trim();
+  if (!dir) { alert('请先填写项目目录路径'); return; }
+  const btn = $('btnScan');
+  btn.disabled = true; btn.textContent = '扫描中…';
+  try {
+    const r = await api('/api/scan', { dir });
+    if (!r.ok) { alert(r.error || '扫描失败'); return; }
+    if (r.empty) {
+      alert('这个目录里没有找到可识别的源码文件。\n\n可能原因：目录选错了，或者项目里只有非代码文件。');
+      return;
+    }
+    const prevDir = S.dir;
+    S.dir = r.root;
+    S.small = r.small || [];
+    S.modules = r.modules.concat(S.small.map((m) => Object.assign({}, m, { tiny: true })));
+    S.picked = new Set(r.modules.map((m) => m.name));
+    // 文档现状：待生成 / 候选 / 已验证 / 已失效
+    S.docOf = {};
+    for (const m of S.modules) S.docOf[m.name] = m.doc || null;
+    // 换了项目目录就丢掉上一轮结果，避免张冠李戴；同一目录重扫则保留（便于续跑）
+    if (prevDir && prevDir !== r.root) S.results = [];
+    renderStats(r);
+    renderModules();
+    renderGenTable();
+    renderFailNote();
+    renderStatus(r.docSummary);
+    saveSession();
+    $('nav2').disabled = false;
+    go(2);
+  } catch (e) {
+    alert('扫描出错：' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '扫描目录';
+  }
+});
+
+function renderStats(r) {
+  $('scanStats').innerHTML = [
+    ['项目根目录', r.root, true],
+    ['源码文件', r.totalFiles],
+    ['总行数', r.totalLines.toLocaleString()],
+    ['候选模块', r.modules.length],
+  ].map(([k, v, mono]) => '<div class="stat"><b class="' + (mono ? 'mono' : '') + '" style="' + (mono ? 'font-size:13px;word-break:break-all' : '') + '">' + esc(v) + '</b><span>' + k + '</span></div>').join('');
+
+  let note = '';
+  if (r.truncated) note += '<div class="note warn">文件数量超过扫描上限，只统计了一部分。建议改扫更具体的子目录。</div>';
+  if (r.fallback) note += '<div class="note warn">这个项目整体比较小（' + r.totalLines + ' 行），所有分组都低于「够写一篇」的行数参考值。下面列出的已经是全部分组，可以直接用，也可以自己合并成一两个模块。</div>';
+  if (r.small && r.small.length) note += '<div class="note">另有 ' + r.small.length + ' 个分组代码量太少（不足 40 行），默认没有勾选。它们排在表格底部并标了「小」——需要的话可以自己勾上，合并进别的模块也行。</div>';
+  $('scanNote').innerHTML = note;
+}
+
+// 文档状态徽标。四种状态对应四种该做的事，所以颜色也分开：
+//   待生成 = 还没写过；候选 = 写了但没人确认过；已验证 = 有人确认过；已失效 = 源码变了
+function statusPill(doc) {
+  const s = (doc && doc.status) || 'missing';
+  const map = {
+    missing:   ['wait', '待生成'],
+    candidate: ['wait', '候选'],
+    validated: ['ok',   '已验证'],
+    stale:     ['bad',  '已失效'],
+  };
+  const hit = map[s] || map.missing;
+  const tip = (doc && doc.reason) || (doc && doc.by ? ('由 ' + doc.by + ' 于 ' + (doc.at || '').slice(0, 10) + ' 确认') : '');
+  return '<span class="pill ' + hit[0] + '"' + (tip ? ' title="' + esc(tip) + '"' : '') + '>' + hit[1] + '</span>';
+}
+
+function statusCounts() {
+  const c = { missing: 0, candidate: 0, validated: 0, stale: 0 };
+  for (const n of S.modules.map((m) => m.name)) {
+    const d = S.docOf[n];
+    if (!d) continue;
+    if (c[d.status] !== undefined) c[d.status] += 1;
+  }
+  return c;
+}
+
+function renderStatus() {
+  const el = $('statusList');
+  if (!S.modules.length) {
+    el.innerHTML = '<div class="empty">先扫描一个项目</div>';
+    $('statusSummary').textContent = '';
+    return;
+  }
+  const c = statusCounts();
+  const total = S.modules.length;
+  $('statusSummary').textContent = '共 ' + total + ' 个模块：已验证 ' + c.validated
+    + ' · 候选 ' + c.candidate + (c.stale ? ' · 已失效 ' + c.stale : '') + (c.missing ? ' · 未生成 ' + c.missing : '');
+
+  const rows = S.modules.map((m) => {
+    const d = S.docOf[m.name] || { status: 'missing' };
+    const note = d.reason || (d.by ? ('由 ' + d.by + ' 确认' + (d.at ? '（' + String(d.at).slice(0, 10) + '）' : '')) : '');
+    let btn = '<span class="hint">还没导出</span>';
+    if (d.status === 'validated') btn = '<button class="ghost" data-verify="' + esc(m.name) + '" data-action="reset">撤销确认</button>';
+    else if (d.status === 'candidate' || d.status === 'stale') btn = '<button class="ghost" data-verify="' + esc(m.name) + '" data-action="validate">标记为已验证</button>';
+    return '<tr><td><span class="mono">' + esc(m.name) + '</span></td>'
+      + '<td>' + statusPill(d) + '</td>'
+      + '<td class="hint" style="font-size:12px">' + esc(note) + '</td>'
+      + '<td style="text-align:right">' + btn + '</td></tr>';
+  });
+  el.innerHTML = '<table><thead><tr><th>模块</th><th style="width:80px">状态</th><th>说明</th><th style="width:132px"></th></tr></thead><tbody>'
+    + rows.join('') + '</tbody></table>';
+
+  el.querySelectorAll('[data-verify]').forEach((b) => {
+    b.addEventListener('click', () => doVerify(b.dataset.verify, b.dataset.action));
+  });
+}
+
+async function doVerify(name, action) {
+  const by = $('verifyBy').value.trim() || '本机用户';
+  const r = await api('/api/verify', { dir: S.dir, module: name, action, by });
+  if (!r.ok) { alert('操作失败：' + r.error); return; }
+  // 就地更新，不必重新扫描整个目录
+  S.docOf[name] = action === 'reset'
+    ? { status: 'candidate', label: '候选', reason: '' }
+    : { status: 'validated', label: '已验证', by, at: r.at };
+  const m = S.modules.find((x) => x.name === name);
+  if (m) m.doc = S.docOf[name];
+  renderStatus();
+  renderModules();
+}
+
+// 重新向服务端问一遍每个模块的文档现状（导出后状态可能已变，所以要能复用）
+async function refreshDocStatus() {
+  if (!S.dir) return;
+  const r = await api('/api/scan', { dir: S.dir });
+  if (!r.ok) return;
+  S.docOf = {};
+  for (const m of (r.modules || []).concat(r.small || [])) S.docOf[m.name] = m.doc || null;
+  for (const m of S.modules) m.doc = S.docOf[m.name] || null;
+  renderStatus();
+  renderModules();
+}
+
+$('btnCheck').addEventListener('click', async () => {
+  if (!S.dir) { alert('先扫描一个项目'); return; }
+  const b = $('btnCheck');
+  b.disabled = true; b.textContent = '检查中…';
+  try {
+    await refreshDocStatus();
+  } catch (e) {
+    alert('检查出错：' + e.message);
+  } finally {
+    b.disabled = false; b.textContent = '重新检查';
+  }
+});
+
+function renderModules() {
+  const tb = $('modTable').querySelector('tbody');
+  // 小的分组排到最后，但 data-idx 仍指向原数组下标，避免勾选状态错位
+  const order = S.modules.map((m, i) => i)
+    .sort((a, b) => (S.modules[a].tiny ? 1 : 0) - (S.modules[b].tiny ? 1 : 0));
+  tb.innerHTML = order.map((idx) => {
+    const m = S.modules[idx];
+    const tooBig = m.lines > 1500;
+    return '<tr' + (m.tiny ? ' style="opacity:.75"' : '') + '>'
+      + '<td><input type="checkbox" data-idx="' + idx + '" ' + (S.picked.has(m.name) ? 'checked' : '') + '></td>'
+      + '<td><input class="mname" type="text" data-idx="' + idx + '" value="' + esc(m.name) + '">'
+      + (m.tiny ? ' <span class="pill wait" style="font-size:11px;padding:1px 7px">小</span>' : '') + '</td>'
+      + '<td>' + statusPill(m.doc) + '</td>'
+      + '<td class="num">' + m.fileCount + '</td>'
+      + '<td class="num"' + (tooBig ? ' style="color:var(--warn)"' : '') + '>' + m.lines.toLocaleString() + (tooBig ? ' ⚠' : '') + '</td>'
+      + '<td class="sample" title="' + esc(m.files.join('\n')) + '">' + esc(m.sample.join('  ·  ')) + (m.fileCount > m.sample.length ? ' …' : '') + '</td>'
+      + '</tr>';
+  }).join('');
+
+  tb.querySelectorAll('input[type=checkbox]').forEach((cb) => {
+    cb.addEventListener('change', () => {
+      const m = S.modules[Number(cb.dataset.idx)];
+      if (cb.checked) S.picked.add(m.name); else S.picked.delete(m.name);
+      updateSelCount();
+    });
+  });
+  tb.querySelectorAll('input.mname').forEach((inp) => {
+    inp.addEventListener('change', () => {
+      const idx = Number(inp.dataset.idx);
+      const old = S.modules[idx].name;
+      const val = inp.value.trim() || old;
+      if (S.picked.has(old)) { S.picked.delete(old); S.picked.add(val); }
+      S.modules[idx].name = val;
+      updateSelCount();
+    });
+  });
+  updateSelCount();
+}
+
+function updateSelCount() {
+  const n = S.picked.size;
+  $('selCount').textContent = '已选 ' + n + ' / ' + S.modules.length + ' 个模块';
+  $('btnToGen').disabled = n === 0;
+  // 这里是所有「勾选/改名」路径的汇合点，顺带存一次会话
+  saveSession();
+}
+
+$('btnAll').addEventListener('click', () => { S.picked = new Set(S.modules.map((m) => m.name)); renderModules(); });
+$('btnNone').addEventListener('click', () => { S.picked = new Set(); renderModules(); });
+$('btnBig').addEventListener('click', () => {
+  S.picked = new Set(S.modules.filter((m) => m.lines <= 1500).map((m) => m.name));
+  renderModules();
+});
+
+$('btnToGen').addEventListener('click', () => {
+  renderGenTable();
+  $('nav3').disabled = false;
+  go(3);
+});
+
+// ------------------------------------------------------------ 3 生成
+
+$('provider').addEventListener('change', () => {
+  $('realCfg').style.display = $('provider').value === 'openai' ? 'block' : 'none';
+});
+document.querySelectorAll('[data-preset]').forEach((b) => {
+  b.addEventListener('click', () => {
+    const [u, m] = b.dataset.preset.split('|');
+    $('baseUrl').value = u;
+    $('model').value = m;
+  });
+});
+
+// 拉取模型清单：避免盲填模型名。返回的清单塞进 datalist，输入框即可下拉选择。
+$('btnModels').addEventListener('click', async () => {
+  const btn = $('btnModels');
+  const baseUrl = $('baseUrl').value.trim();
+  if (!baseUrl) { alert('请先填写接口地址（baseUrl）'); return; }
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '拉取中…';
+  try {
+    const r = await api('/api/models', { baseUrl, apiKey: $('apiKey').value.trim() });
+    if (!r.ok) { alert('拉取失败：' + r.error); return; }
+    const dl = $('modelList');
+    dl.innerHTML = '';
+    for (const id of r.models) {
+      const o = document.createElement('option');
+      o.value = id;
+      dl.appendChild(o);
+    }
+    btn.textContent = '共 ' + r.count + ' 个';
+    setTimeout(() => { btn.textContent = old; }, 2600);
+    // 只给一个已填充的空下拉提示，不替用户做选择
+    $('model').focus();
+    alert('拉到 ' + r.count + ' 个模型。点模型输入框即可下拉选择，或直接输入过滤。\n\n建议：避开带 reason/thinking/r1 字样的推理模型，它们非常慢。');
+  } finally {
+    btn.disabled = false;
+    if (btn.textContent === '拉取中…') btn.textContent = old;
+  }
+});
+
+function pickedModules() {
+  // 勾选状态按名字记录，但名字可改，所以用「当前名字」重建
+  const out = [];
+  const seen = new Set();
+  for (const m of S.modules) {
+    if (S.picked.has(m.name) && !seen.has(m.name)) { seen.add(m.name); out.push(m); }
+  }
+  return out;
+}
+
+// 模块名 → 表格行下标。重试时要靠它定位回原来那一行，所以不能重建表格。
+let rowOf = {};
+
+function renderGenTable() {
+  const mods = pickedModules();
+  rowOf = {};
+  mods.forEach((m, i) => { rowOf[m.name] = i; });
+  const tb = $('genTable').querySelector('tbody');
+  tb.innerHTML = mods.map((m, i) =>
+    '<tr data-name="' + esc(m.name) + '">'
+    + '<td>' + esc(m.name) + '</td>'
+    + '<td><span class="pill wait" data-st="' + i + '">待生成</span></td>'
+    + '<td class="num" data-stats="' + i + '">—</td>'
+    + '<td class="num" data-ms="' + i + '">—</td>'
+    + '</tr>'
+  ).join('');
+  paintResults();
+}
+
+// 把已有结果（可能是上一轮跑的，也可能是从 localStorage 恢复的）画回表格
+function paintResults() {
+  for (const r of S.results) {
+    const i = rowOf[r.name];
+    if (i === undefined) continue;
+    if (r.ok) {
+      setStatus(i, 'ok', '完成');
+      setCell('stats', i, (((r.stats && r.stats.codeChars) || 0) / 1000).toFixed(1) + 'k → '
+        + (((r.stats && r.stats.docChars) || 0) / 1000).toFixed(1) + 'k 字');
+      setCell('ms', i, (((r.stats && r.stats.ms) || 0) / 1000).toFixed(1) + 's');
+    } else {
+      setStatus(i, 'bad', '失败');
+    }
+  }
+}
+
+function setStatus(i, cls, text) {
+  const el = document.querySelector('[data-st="' + i + '"]');
+  if (el) { el.className = 'pill ' + cls; el.textContent = text; }
+}
+
+function setCell(which, i, text) {
+  const el = document.querySelector('[data-' + which + '="' + i + '"]');
+  if (el) el.textContent = text;
+}
+
+function genConfig() {
+  return {
+    baseUrl: $('baseUrl').value.trim(),
+    apiKey: $('apiKey').value.trim(),
+    model: $('model').value.trim(),
+    temperature: Number($('temperature').value) || 0.2,
+    // 界面按秒填，服务端按毫秒收
+    timeoutMs: (Number($('timeoutSec').value) || 600) * 1000,
+    maxTokens: Number($('maxTokens').value) || 4096,
+  };
+}
+
+// 失败原因要看得见。以前只把错误塞进「代码/文档」那格还截断到 40 字，
+// 网络层失败时更是一个字都不写，用户只能看到「—」。
+function renderFailNote() {
+  const failed = S.results.filter((r) => !r.ok);
+  const box = $('genFail');
+  const btn = $('btnRetry');
+  if (!failed.length) {
+    box.innerHTML = '';
+    btn.style.display = 'none';
+    btn.disabled = true;
+    return;
+  }
+  box.innerHTML = '<div class="note err" style="margin-top:12px"><b>失败 '
+    + failed.length + ' 个：</b>'
+    + failed.map((r) => '<span class="mono">' + esc(r.name) + '</span> ' + esc(String(r.error || '未知原因').slice(0, 100))).join('；')
+    + '</div>';
+  btn.style.display = '';
+  btn.textContent = '重试失败的 ' + failed.length + ' 个';
+  btn.disabled = S.running;
+}
+
+// 跑单个模块。把「本地服务连接中断」和「模型接口报错」分开表述——
+// 两者该做的事完全不同，混成一句「失败」等于没给信息。
+async function runOne(m, i, provider, config) {
+  setStatus(i, 'run', '生成中');
+  try {
+    const r = await api('/api/generate', { dir: S.dir, module: m, provider, config });
+    if (r.ok) {
+      setStatus(i, 'ok', '完成');
+      setCell('stats', i, (r.stats.codeChars / 1000).toFixed(1) + 'k → ' + (r.stats.docChars / 1000).toFixed(1) + 'k 字');
+      setCell('ms', i, (r.stats.ms / 1000).toFixed(1) + 's');
+      return {
+        name: m.name, markdown: r.markdown, ok: true, stats: r.stats,
+        lines: m.lines, fileCount: m.fileCount, files: m.files,
+        provider, model: provider === 'openai' ? config.model : '演示模式',
+      };
+    }
+    setStatus(i, 'bad', '失败');
+    setCell('stats', i, '—');
+    setCell('ms', i, '—');
+    return { name: m.name, ok: false, error: r.error || '未知错误', lines: m.lines, fileCount: m.fileCount, files: m.files };
+  } catch (e) {
+    setStatus(i, 'bad', '已中断');
+    setCell('stats', i, '—');
+    setCell('ms', i, '—');
+    const raw = String((e && e.message) || e);
+    const msg = /Failed to fetch|NetworkError|fetch failed|load failed|terminated/i.test(raw)
+      ? '本地服务连接中断（服务是否被重启过？）'
+      : raw;
+    return { name: m.name, ok: false, error: msg, lines: m.lines, fileCount: m.fileCount, files: m.files };
+  }
+}
+
+// reset=false 时保留已有结果、只覆盖本次跑到的模块 —— 这是「重试」的基础
+async function runList(mods, opts) {
+  if (!mods.length) return;
+  const provider = $('provider').value;
+  const config = genConfig();
+  if (provider === 'openai' && (!config.baseUrl || !config.model)) {
+    alert('真实模型模式需要填写接口地址和模型名');
+    return;
+  }
+
+  if (opts.reset) S.results = [];
+  S.running = true;
+  S.stop = false;
+  $('btnGen').disabled = true;
+  $('btnStop').disabled = false;
+  $('btnStop').textContent = '停止';
+  renderFailNote();
+
+  const total = mods.length;
+  for (let n = 0; n < total; n++) {
+    const m = mods[n];
+    const i = rowOf[m.name];
+    if (i === undefined) continue;
+    if (S.stop) { setStatus(i, 'wait', '已跳过'); continue; }
+    $('genProgress').textContent = '正在处理 ' + (n + 1) + ' / ' + total + '：' + m.name;
+    const rec = await runOne(m, i, provider, config);
+    // 同名覆盖，重试不会堆出重复条目
+    S.results = S.results.filter((x) => x.name !== rec.name);
+    S.results.push(rec);
+    renderFailNote();
+    // 每跑完一个就存盘：此刻刷新或断电，已完成的模块也不会白跑
+    saveSession();
+  }
+
+  S.running = false;
+  $('btnGen').disabled = false;
+  $('btnStop').disabled = true;
+  S.results.sort((a, b) => (rowOf[a.name] ?? 0) - (rowOf[b.name] ?? 0));
+  const okCount = S.results.filter((r) => r.ok).length;
+  const failCount = S.results.filter((r) => !r.ok).length;
+  $('genProgress').textContent = '完成 ' + okCount + ' 个'
+    + (failCount ? '，失败 ' + failCount + ' 个' : '')
+    + (S.stop ? '（已手动停止）' : '');
+  $('btnToPreview').disabled = okCount === 0;
+  renderFailNote();
+}
+
+$('btnStop').addEventListener('click', () => { S.stop = true; $('btnStop').textContent = '正在停止…'; });
+
+$('btnGen').addEventListener('click', () => {
+  const mods = pickedModules();
+  if (!mods.length) { alert('没有选中的模块'); return; }
+  const okCount = S.results.filter((r) => r.ok).length;
+  if (okCount) {
+    const yes = confirm('当前已有 ' + okCount + ' 个模块生成成功。\n\n'
+      + '「确定」= 全部重跑（覆盖已有结果，会重新消耗额度）\n'
+      + '「取消」= 保持现状；只想补失败项，请点「重试失败项」');
+    if (!yes) return;
+  }
+  renderGenTable();
+  runList(mods, { reset: true });
+});
+
+$('btnRetry').addEventListener('click', () => {
+  const failed = S.results.filter((r) => !r.ok).map((r) => r.name);
+  const mods = pickedModules().filter((m) => failed.indexOf(m.name) >= 0);
+  if (!mods.length) { alert('没有可重试的模块（失败的项可能已被取消勾选）'); return; }
+  runList(mods, { reset: false });
+});
+
+// ------------------------------------------------------------ 4 预览导出
+
+$('btnToPreview').addEventListener('click', () => {
+  renderResults();
+  $('nav4').disabled = false;
+  $('exportTarget').textContent = '将写入：' + S.dir + '\\docs\\current\\modules\\';
+  go(4);
+});
+
+function renderResults() {
+  const ok = S.results.filter((r) => r.ok);
+  const list = $('resultList');
+  if (!ok.length) { list.innerHTML = '<div class="empty">没有成功生成的模块</div>'; return; }
+  list.innerHTML = ok.map((r, i) =>
+    '<a data-i="' + i + '">' + esc(r.name) + '<small>' + r.lines.toLocaleString() + ' 行 · ' + r.fileCount + ' 文件</small></a>'
+  ).join('');
+  list.querySelectorAll('a').forEach((a) => {
+    a.addEventListener('click', () => {
+      list.querySelectorAll('a').forEach((x) => x.classList.remove('on'));
+      a.classList.add('on');
+      S.current = ok[Number(a.dataset.i)];
+      $('docView').innerHTML = mdToHtml(S.current.markdown);
+      $('docView').scrollTop = 0;
+    });
+  });
+  list.querySelector('a').click();
+}
+
+$('btnExport').addEventListener('click', async () => {
+  const ok = S.results.filter((r) => r.ok);
+  if (!ok.length) return;
+  const btn = $('btnExport');
+  btn.disabled = true; btn.textContent = '导出中…';
+  try {
+    const r = await api('/api/export', { dir: S.dir, docs: ok });
+    if (!r.ok) { $('exportInfo').innerHTML = '<span style="color:var(--danger)">导出失败：' + esc(r.error) + '</span>'; return; }
+    $('exportInfo').innerHTML = '<b>已写入 ' + r.written.length + ' 个文件。</b>源码没有被改动。用编辑器打开下面这些路径就能看到。';
+    $('exportPaths').style.display = 'block';
+    $('exportPaths').innerHTML = r.written.map(esc).join('<br>');
+    // 导出会改写 frontmatter 里的指纹，状态可能因此变化（比如确认作废），重查一遍
+    refreshDocStatus().catch(() => {});
+  } catch (e) {
+    $('exportInfo').innerHTML = '<span style="color:var(--danger)">导出失败：' + esc(e.message) + '</span>';
+  } finally {
+    btn.disabled = false; btn.textContent = '导出到项目 docs 目录';
+  }
+});
+
+// 回车即扫描
+$('dir').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btnScan').click(); });
+
+// ------------------------------------------------------------ 启动时恢复上次会话
+// 让「刷新页面」不再等于「之前跑的全白费」。
+(function restoreSession() {
+  const s = loadSession();
+  if (!s || !s.dir || !Array.isArray(s.results) || !s.results.length) return;
+
+  S.dir = s.dir;
+  S.modules = Array.isArray(s.modules) ? s.modules : [];
+  S.small = Array.isArray(s.small) ? s.small : [];
+  S.picked = new Set(Array.isArray(s.picked) ? s.picked.filter((n) => S.modules.some((m) => m.name === n)) : []);
+  if (!S.picked.size) S.picked = new Set(S.modules.filter((m) => !m.tiny).map((m) => m.name));
+  S.results = s.results;
+  $('dir').value = s.dir;
+  // 上次扫描时各模块的文档现状就存在 modules 里，直接取回来，不必先重新扫描
+  S.docOf = {};
+  for (const m of S.modules) S.docOf[m.name] = m.doc || null;
+
+  const ok = S.results.filter((r) => r.ok).length;
+  const bad = S.results.filter((r) => !r.ok).length;
+
+  if (S.modules.length) {
+    renderModules();
+    $('nav2').disabled = false;
+    renderGenTable();
+    $('nav3').disabled = false;
+  }
+  if (ok) $('nav4').disabled = false;
+  renderFailNote();
+  renderStatus();
+
+  const mins = Math.round(((S.results.reduce((a, r) => a + ((r.stats && r.stats.ms) || 0), 0)) / 60000) * 10) / 10;
+  $('scanNote').innerHTML = '<div class="note warn">'
+    + '<b>已恢复上次的 ' + S.results.length + ' 个模块结果</b>（成功 ' + ok + ' 个'
+    + (bad ? '，失败 ' + bad + ' 个' : '') + (mins > 0.5 ? '，已花掉约 ' + mins + ' 分钟模型时间' : '') + '）。'
+    + (bad ? '直接点第 3 步的「重试失败项」，只补失败的那 ' + bad + ' 个，不会重跑已成功的。' : '')
+    + '<br>重新扫描<b>同一目录</b>会保留这些结果；扫描其他目录会自动清除。</div>';
+  go(S.modules.length ? 3 : 1);
+})();
+</script>
+</body>
+</html>

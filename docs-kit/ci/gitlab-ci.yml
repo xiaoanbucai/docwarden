@@ -1,0 +1,132 @@
+# 合并进你项目根目录的 .gitlab-ci.yml
+#
+# 四个触发契机，各司其职：
+#   1. merge_request_event → 文档影响预览，贴成 MR 评论（不写入仓库）
+#   2. 主干 push           → 正式更新 docs/current/，开自动 MR
+#   3. commit tag          → 生成版本演进章节，写入 docs/history/
+#   4. schedule            → 每日巡检，找出文档与代码不一致的模块并修复
+#
+# 前置配置：
+#   加密变量 DOCS_BOT_TOKEN —— 具有 write_repository 和 api 权限的 Project Access Token
+#   加密变量 LLM_API_KEY
+#   模型接口（baseUrl / model）从仓库根目录的 .knowledge.mjs 读 —— 那里刻意留空，
+#   要你自己填。若更愿意放加密变量，在下面 variables 里加 LLM_BASE_URL 与 LLM_MODEL；
+#   注意：变量一旦是**空值**，脚本会当成「没配」并报错，所以要么给真值、要么别定义。
+#
+# 建议把 .docs-preview.md 加进 .gitignore。
+
+stages:
+  - docs
+
+# 公共配置，四个任务都继承它
+.docs:base:
+  stage: docs
+  image: node:20-alpine
+  # 同一分支上的文档任务串行执行，避免两个进程同时写文件造成冲突。
+  # GitHub 那边对应的是 concurrency，这里用 resource_group，语义相同。
+  resource_group: docs-$CI_COMMIT_REF_SLUG
+  variables:
+    # 需要足够的历史来算 diff，不用全量
+    GIT_DEPTH: "50"
+    # LLM_BASE_URL / LLM_MODEL 也可以在这里定义（建议勾上 Masked）：
+    # LLM_MODEL: "你的模型名"
+  before_script:
+    - apk add --no-cache git curl
+
+# 把生成结果提交上去并自动开 MR。
+# 只作为脚本片段被 !reference 引用，本身不执行。
+.docs:commit:
+  script:
+    - |
+      if [ -z "$(git status --porcelain docs/)" ]; then
+        echo "文档无变化，无需提交"
+        exit 0
+      fi
+    - git config user.name "docs-bot"
+    - git config user.email "docs-bot@noreply.local"
+    - |
+      BRANCH="docs/auto-update-${CI_PIPELINE_ID}"
+      git checkout -b "$BRANCH"
+      git add docs/
+      git commit -m "docs: 自动更新文档 [skip ci]"
+      git push \
+        -o merge_request.create \
+        -o merge_request.target=$CI_DEFAULT_BRANCH \
+        -o merge_request.title="docs: 自动更新文档" \
+        -o merge_request.remove_source_branch \
+        "https://oauth2:${DOCS_BOT_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" HEAD
+
+# ── 契机一：MR 阶段的影响预览 ────────────────────────────────
+# 让每个人在合并前就看到「我这条分支会让文档变成什么样」。
+docs:preview:
+  extends: .docs:base
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  variables:
+    # MR 需要完整的 merge-base，这里必须取全量历史
+    GIT_DEPTH: "0"
+  script:
+    # 脚本会自动读取 $CI_MERGE_REQUEST_DIFF_BASE_SHA 作为比对基准
+    - node scripts/docs-update.mjs --mode preview
+    # 把预览贴成 MR 评论。做法是「先删旧的、再贴新的」，让同一条评论随 push 更新，
+    # 而不是每推一次就多一条 —— 对等 GitHub 那边的 sticky comment。
+    - |
+      NOTES_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/merge_requests/${CI_MERGE_REQUEST_IID}/notes"
+      # 只删带专属标记的评论。标记够独特，不会误伤别人写的评论。
+      OLD=$(curl -sS --header "PRIVATE-TOKEN: ${DOCS_BOT_TOKEN}" "${NOTES_URL}?per_page=100" \
+        | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{JSON.parse(s).filter(n=>(n.body||"").includes("docs-preview-sticky")).forEach(n=>console.log(n.id))}catch(e){}})")
+      for id in $OLD; do
+        curl -sS --request DELETE --header "PRIVATE-TOKEN: ${DOCS_BOT_TOKEN}" "${NOTES_URL}/${id}" > /dev/null
+      done
+      # 贴新的。正文末尾带上标记，下次才认得出来。
+      { cat .docs-preview.md; printf '\n\n<!-- docs-preview-sticky -->\n'; } > .docs-preview.post.md
+      curl -sS \
+        --request POST \
+        --header "PRIVATE-TOKEN: ${DOCS_BOT_TOKEN}" \
+        --data-urlencode "body@.docs-preview.post.md" \
+        "${NOTES_URL}" \
+        > /dev/null
+      rm -f .docs-preview.post.md
+  artifacts:
+    when: always
+    paths:
+      - .docs-preview.md
+    expire_in: 7 days
+
+# ── 契机二：主干合并后的正式更新 ─────────────────────────────
+docs:update:
+  extends: .docs:base
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        - "src/**/*"
+        - "app/**/*"
+        - "packages/**/*"
+        - "components/**/*"
+        # 刻意不写 docs/**，避免文档更新再次触发自己
+  script:
+    - node scripts/docs-update.mjs --mode incremental
+    - !reference [.docs:commit, script]
+
+# ── 契机三：Release 标签 → 版本章节 ──────────────────────────
+docs:chapter:
+  extends: .docs:base
+  rules:
+    - if: '$CI_COMMIT_TAG'
+  variables:
+    GIT_DEPTH: "0"
+  script:
+    - node scripts/docs-update.mjs --mode chapter --version=$CI_COMMIT_TAG
+    - !reference [.docs:commit, script]
+
+# ── 契机四：每日巡检 ─────────────────────────────────────────
+# 兜底机制：找出「代码变了但文档没跟上」的漏网模块。
+# 注意：这里绝对不能用 changes: 规则 —— 定时流水线拿不到 diff 基准，
+# changes 会永远为真，等于每次都全量跑。
+docs:audit:
+  extends: .docs:base
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+  script:
+    - node scripts/docs-update.mjs --mode audit --fix
+    - !reference [.docs:commit, script]

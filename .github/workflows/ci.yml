@@ -1,0 +1,192 @@
+# docwarden 自己的 CI
+#
+# 目的有两个：
+#   1. 守住「主程序零依赖」和几套回归测试，别让改动悄悄破坏既有承诺
+#   2. 给使用者一个可验证的信号 —— 这个仓库是绿的
+#
+# 注意：测试里有一部分是端到端跑真实界面的，必须先起主服务（默认 5173）。
+
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 工具声明 Node 18+，所以在最低版本上也必须绿
+        node-version: ["18", "20", "22"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: 装测试依赖（只有 jsdom，工具本身零依赖）
+        run: npm install --no-audit --no-fund
+
+      - name: 守住零依赖这条承诺
+        # 主程序一旦 import 了 npm 包，使用者的 CI 就必须联网装依赖 —— 那就不是这个工具了。
+        # 检查逻辑放在 tools/check-zero-dep.mjs 里，因为「会误报的检查」等于没有检查。
+        run: npm run check:deps
+
+      - name: 语法检查
+        run: |
+          for f in docwarden.mjs docwarden-mcp.mjs bin/cli.mjs \
+                   src/install.mjs src/detect.mjs \
+                   docs-kit/scripts/docs-update.mjs docs-kit/scripts/lib/freshness.mjs; do
+            node --check "$f" || exit 1
+          done
+          echo "✅ 语法检查通过"
+
+      - name: 起主服务（后台）
+        run: |
+          node docwarden.mjs --no-open --port 5173 > /tmp/docwarden.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:5173/ > /dev/null; then echo "服务已就绪"; exit 0; fi
+            sleep 0.5
+          done
+          echo "❌ 服务 15 秒内未就绪，日志如下："; cat /tmp/docwarden.log; exit 1
+
+      - name: 回归测试
+        run: npm test
+
+      - name: 失败时把服务日志带出来
+        if: failure()
+        run: cat /tmp/docwarden.log || true
+
+  init-smoke:
+    # 端到端验证安装器：在一个假项目里 init 一遍，再跑一次 CI 脚本。
+    # 这是使用者走的第一条路径，坏了必须第一时间知道。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 造一个有源码的假项目
+        # 空目录里 init 会推断出「零个模块」，那就验不到模块划分这条逻辑了
+        run: |
+          mkdir -p /tmp/demo-project/src/modules/{order,user,payment}
+          echo '{"name":"demo-project","version":"1.0.0"}' > /tmp/demo-project/package.json
+          for d in order user payment; do
+            for i in 1 2 3 4; do
+              echo "export const a = $i" > /tmp/demo-project/src/modules/$d/file$i.js
+            done
+          done
+
+      - name: 执行 init（两个平台都装）
+        run: node bin/cli.mjs init --dir=/tmp/demo-project --platform=both --yes
+
+      - name: 检查装出来的东西
+        run: |
+          cd /tmp/demo-project
+          test -f .knowledge.mjs                || { echo "❌ 缺 .knowledge.mjs"; exit 1; }
+          test -f scripts/docs-update.mjs       || { echo "❌ 缺主脚本"; exit 1; }
+          test -f scripts/lib/freshness.mjs     || { echo "❌ 缺指纹实现"; exit 1; }
+          test -f scripts/prompts/module.md     || { echo "❌ 缺提示词"; exit 1; }
+          test -f .github/workflows/docs.yml    || { echo "❌ 缺 GitHub workflow"; exit 1; }
+          test -f .gitlab-ci.yml                || { echo "❌ 缺 GitLab 配置"; exit 1; }
+          grep -q '.docs-preview.md' .gitignore || { echo "❌ .gitignore 没加预览文件"; exit 1; }
+          # 模块推断必须切到业务目录那一层
+          grep -q "src/modules/order/" .knowledge.mjs || { echo "❌ 模块推断没切到业务目录"; exit 1; }
+          # 模型配置必须留空：工具不替使用者决定「源码发给谁」
+          # 注意要剔掉注释行 —— 模板注释里带了几种常见填法当参考，那是示例不是预填值
+          if grep -v '^[[:space:]]*//' .knowledge.mjs | grep -qE "baseUrl: *'https?:"; then
+            echo "❌ 配置里写死了模型接口地址（不预填厂商是设计约定）"; exit 1
+          fi
+          grep -q "process.env.LLM_BASE_URL || ''" .knowledge.mjs || { echo "❌ baseUrl 没有留空"; exit 1; }
+          grep -q "process.env.LLM_MODEL || ''" .knowledge.mjs || { echo "❌ model 没有留空"; exit 1; }
+          echo "✅ init 产出完整（模型配置正确地留空）"
+
+      - name: 在装好的项目里跑一次 audit（不调模型）
+        run: |
+          cd /tmp/demo-project
+          git init -q
+          git config user.email ci@local
+          git config user.name ci
+          git config core.autocrlf false
+          git add -A
+          git -c commit.gpgsign=false commit -qm init
+          node scripts/docs-update.mjs --mode audit
+
+      - name: 没配模型时必须「开工前失败」，不能偷偷发给某个默认地址
+        # 这条守的是一次可能造成实际损失的事故：模板若预填了某家厂商的地址，
+        # 一个没读文档的人跑起来会直接成功 —— 然后在毫不知情的情况下把整个仓库的
+        # 源码发到一个公共站点去。相比之下，干脆报错要好得多。
+        run: |
+          cd /tmp/demo-project
+          set +e
+          OUT=$(env -u LLM_BASE_URL -u LLM_MODEL -u LLM_API_KEY \
+                node scripts/docs-update.mjs --mode incremental --base=HEAD~1 2>&1)
+          CODE=$?
+          set -e
+          if [ "$CODE" -eq 0 ]; then
+            echo "❌ 没配模型竟然成功了 —— 那它把源码发去了哪里？"; echo "$OUT"; exit 1
+          fi
+          echo "$OUT" | grep -q "还没配置模型接口" || { echo "❌ 报错没说清原因"; echo "$OUT"; exit 1; }
+          echo "✅ 没配模型时在开工前就停了，并给出两种配法"
+
+          # 另一半同样重要：零成本的巡检不能被模型配置拖累，否则「随时可跑」是空话
+          env -u LLM_BASE_URL -u LLM_MODEL -u LLM_API_KEY \
+            node scripts/docs-update.mjs --mode audit > /dev/null
+          echo "✅ audit 在没配模型、也没有密钥时照常跑通"
+
+      - name: doctor 应当没有阻塞项
+        run: node bin/cli.mjs doctor --dir=/tmp/demo-project
+
+      - name: 引用模式（--no-vendor）不能往仓库里塞脚本
+        run: |
+          mkdir -p /tmp/ref-project/src/modules/order /tmp/ref-project/src/modules/cart
+          for m in order cart; do
+            for i in 1 2 3; do echo "export const a = $i" > /tmp/ref-project/src/modules/$m/f$i.js; done
+          done
+          echo '{"name":"ref-project"}' > /tmp/ref-project/package.json
+          node bin/cli.mjs init --dir=/tmp/ref-project --no-vendor
+          test ! -d /tmp/ref-project/scripts            || { echo "❌ 引用模式不该放 scripts/"; exit 1; }
+          test -f /tmp/ref-project/.knowledge.mjs       || { echo "❌ 引用模式没生成配置"; exit 1; }
+          grep -qE '^\s*uses:.*docwarden@' /tmp/ref-project/.github/workflows/docs.yml \
+            || { echo "❌ 引用模式的 workflow 没有 uses:"; exit 1; }
+          echo "✅ 引用模式产出正确"
+
+      - name: 引用模式：--root 必须把文档写进目标仓库
+        run: |
+          cd /tmp/ref-project
+          git init -q && git config user.email ci@local && git config user.name ci
+          git config core.autocrlf false && git add -A && git -c commit.gpgsign=false commit -qm init
+          # 模拟 Action：脚本在工具目录，仓库在别处
+          node "$GITHUB_WORKSPACE/docs-kit/scripts/docs-update.mjs" --root /tmp/ref-project --mode audit
+          test -f /tmp/ref-project/docs/current/INDEX.md || { echo "❌ INDEX.md 没写进目标仓库"; exit 1; }
+          test ! -f "$GITHUB_WORKSPACE/docs/current/INDEX.md" || { echo "❌ 污染了工具自己的目录"; exit 1; }
+          echo "✅ --root 指向正确"
+
+      - name: doctor 在引用模式下的两条边界（不误报 / 拦住占位符）
+        run: |
+          # 装完就该能跑：模板里不许再留占位符
+          node bin/cli.mjs doctor --dir=/tmp/ref-project
+          echo "✅ 引用模式装完 doctor 直接通过"
+          # 人手改回去（或从带占位符的旧版本升上来）时，护栏必须还在
+          node -e 'const fs=require("fs");const p="/tmp/ref-project/.github/workflows/docs.yml";const s=fs.readFileSync(p,"utf8");fs.writeFileSync(p,s.replace(/^([ \t]*uses:[ \t]*)\S*docwarden@/gm,"$1your-org/docwarden@"))'
+          if node bin/cli.mjs doctor --dir=/tmp/ref-project; then
+            echo "❌ 占位符没换，doctor 却没拦住"; exit 1
+          fi
+          echo "✅ 占位符被 doctor 拦下"
+
+      - name: 幂等 —— 重跑不能冲掉人改过的配置
+        run: |
+          cp /tmp/demo-project/.knowledge.mjs /tmp/before.mjs
+          node "$GITHUB_WORKSPACE/bin/cli.mjs" init --dir=/tmp/demo-project --platform=both
+          diff -q /tmp/before.mjs /tmp/demo-project/.knowledge.mjs && echo "✅ 配置文件未被覆盖"

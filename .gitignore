@@ -1,0 +1,21 @@
+# 依赖（只有跑测试才需要 jsdom；工具本身零依赖）
+node_modules/
+
+# 会话工具留在本地的数据与笔记，不进公开仓库
+.workbuddy/
+
+# PR 预览是临时产物，不进仓库
+.docs-preview.md
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# 日志与临时文件
+*.log
+npm-debug.log*
+tmp/
+.tmp/

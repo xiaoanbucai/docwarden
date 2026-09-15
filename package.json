@@ -1,0 +1,70 @@
+{
+  "name": "docwarden",
+  "version": "1.2.0",
+  "description": "给团队一份敢信的模块文档：跑在 GitHub Actions / GitLab CI 上，从代码自动生成模块文档，源码一变就标回「已失效」，没人确认过的绝不冒充结论。可作为 GitHub Action 直接 uses 引用，零依赖（CI 里不需要 npm install）。",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "docwarden": "./bin/cli.mjs",
+    "docwarden-mcp": "./docwarden-mcp.mjs"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "lib/",
+    "docs-kit/",
+    "sample/",
+    "action.yml",
+    "USAGE.md",
+    "docwarden.mjs",
+    "docwarden-mcp.mjs",
+    "docwarden.ui.html",
+    "MCP.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xiaoanbucai/docwarden.git"
+  },
+  "homepage": "https://github.com/xiaoanbucai/docwarden#readme",
+  "bugs": {
+    "url": "https://github.com/xiaoanbucai/docwarden/issues"
+  },
+  "keywords": [
+    "documentation",
+    "docs-as-code",
+    "github-actions",
+    "gitlab-ci",
+    "mcp",
+    "model-context-protocol",
+    "llm",
+    "knowledge-base",
+    "ai-coding",
+    "zero-dependency"
+  ],
+  "scripts": {
+    "start": "node docwarden.mjs",
+    "mcp": "node docwarden-mcp.mjs",
+    "fake-llm": "node tests/fake-llm.mjs",
+    "check:deps": "node tools/check-zero-dep.mjs",
+    "test:freshness": "node tests/freshness-parity.test.mjs",
+    "test:ci": "node tests/ci-smoke.test.mjs",
+    "test:init": "node tests/init-smoke.test.mjs",
+    "test:selfcheck": "node tests/ui-selfcheck.test.mjs",
+    "test:status": "node tests/status-lifecycle.test.mjs",
+    "test:persist": "node tests/ui-persist.test.mjs",
+    "test:ui-status": "node tests/ui-status.test.mjs",
+    "test:mcp": "node tests/mcp.test.mjs",
+    "test:leak": "node tests/no-secret-leak.test.mjs",
+    "test:retry": "node tests/ui-retry.test.mjs",
+    "test:all": "node tools/run-all-tests.mjs --with-retry",
+    "test": "npm run check:deps && npm run test:freshness && npm run test:ci && npm run test:init && npm run test:selfcheck && npm run test:status && npm run test:persist && npm run test:ui-status && npm run test:mcp && npm run test:leak"
+  },
+  "devDependencies": {
+    "jsdom": "^30.0.1"
+  }
+}

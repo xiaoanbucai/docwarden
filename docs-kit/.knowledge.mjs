@@ -1,0 +1,129 @@
+/**
+ * .knowledge.mjs —— 知识库配置
+ *
+ * 放在仓库根目录。改完这个文件，脚本行为就变了。
+ * 用 .mjs 而不是 JSON，是为了能写注释 —— 配置需要解释，尤其是模块划分。
+ *
+ * 这一份是**填好的样例**，放在这里供对照：真正要用的那份由 `npx docwarden init`
+ * 依据你现有的目录结构生成（模板见 src/templates/knowledge.mjs.tpl）。
+ */
+
+export default {
+  // 项目名，会写进文档元数据。多项目检索时用来区分来源。
+  project: 'my-app',
+
+  // ── 模块划分 ────────────────────────────────────────────────
+  // 这是整个配置里最需要你花心思的地方。
+  //
+  // 划分原则：
+  //   太细 → 文档碎片化，没人看得过来
+  //   太粗 → 每次小改动都重生成一大堆，浪费钱
+  //   建议  → 一个模块 5~30 个文件，参照现有目录结构
+  //
+  // prefixes 是路径前缀匹配，简单可靠，不需要 glob。
+  modules: [
+    {
+      name: 'order',
+      title: '订单',
+      prefixes: ['src/modules/order/', 'src/pages/order/'],
+    },
+    {
+      name: 'user',
+      title: '用户',
+      prefixes: ['src/modules/user/', 'src/pages/user/'],
+    },
+    {
+      name: 'common',
+      title: '公共组件与工具',
+      prefixes: ['src/components/', 'src/utils/'],
+    },
+    // 按你的项目实际情况增删。
+    // 没被任何模块命中的文件会被忽略 —— 这是有意的，
+    // 避免把配置、脚本、样式这些东西也写进知识库。
+  ],
+
+  // ── 源码根目录 ──────────────────────────────────────────────
+  // 巡检时会扫描这里，找出「不属于任何模块」的文件。
+  //
+  // 为什么需要这个：新人新建了 src/features/promo/ 但忘了改配置，
+  // 这个功能就永远不会有文档，而且不会有任何报错 —— 属于最危险的静默失效。
+  sourceRoots: ['src/', 'app/'],
+
+  // ── 忽略规则 ────────────────────────────────────────────────
+  // 命中的文件不参与文档生成。
+  ignorePaths: [
+    'node_modules/',
+    'dist/',
+    'build/',
+    'unpackage/',          // uni-app 产物
+    '.min.js',
+    '.map',
+    '.snap',
+    '__snapshots__/',
+    'package-lock.json',
+    'pnpm-lock.yaml',
+    'yarn.lock',
+    'docs/',               // 关键：不处理文档自身，否则会自触发
+  ],
+
+  // ── 成本护栏 ────────────────────────────────────────────────
+  guard: {
+    // 单次运行允许处理的最大文件数。超过就只取前 N 个并告警。
+    // 这是防止「一次格式化 / 重构」把账单打爆的兜底。
+    maxChangedFiles: 60,
+
+    // 单个模块每次最多读入多少字符的代码。
+    // 超出的部分会被截断 —— 大模块建议拆细。
+    maxCodePerModule: 120000,
+
+    // 有效代码少于这个字符数的模块直接跳过 —— 没什么可写的，别浪费 token。
+    minCodePerModule: 400,
+
+    // 输出长度超过输入代码的这个倍数就判定为幻觉，拒绝写入。
+    maxOutputRatio: 3,
+
+    // 倍数校验的生效门槛：输入代码超过这个字符数才做倍数检查。
+    // 小模块的文档本来就可能比代码长，一刀切会误杀。
+    ratioCheckFloor: 2000,
+
+    // 输出短于这个长度视为无效生成。
+    minOutputChars: 200,
+
+    // 文档超过这个天数未更新，索引页会把它标成「可能过期」。
+    staleDays: 30,
+  },
+
+  // ── 模型配置（**必须你自己填**，这里刻意留空）──────────────────
+  //
+  // 为什么留空：这个脚本会把源码读出来发给模型，填哪个地址就等于把源码交给谁。
+  // 这是个决定，不是技术细节 —— 所以工具不替你预填任何厂商，也不会偷偷用
+  // 一个默认地址跑起来。没填就报错，报错里告诉你怎么填。
+  //
+  // 只要服务端提供 OpenAI 兼容的 /chat/completions 就能用，例如：
+  //   本地 Ollama    baseUrl: 'http://127.0.0.1:11434/v1'             model: 'qwen3:8b'
+  //   本地 vLLM      baseUrl: 'http://127.0.0.1:8000/v1'              model: 'Qwen/Qwen3-8B'
+  //   公司内网服务    baseUrl: 'https://你们的内网地址/v1'                model: 按服务端给的填
+  //
+  // ★ baseUrl 填 https:// 公网地址 = 源码会完整送到那家厂商，先确认安全规定。
+  //
+  // 也可以不改这里，用环境变量传：LLM_BASE_URL / LLM_MODEL / LLM_API_KEY
+  // apiKey 一律走环境变量，**不要写在这**。详见 USAGE.md（使用说明）。
+  llm: {
+    baseUrl: process.env.LLM_BASE_URL || '',
+    model: process.env.LLM_MODEL || '',
+    temperature: 0.2,      // 写文档不需要创意，低温度减少发挥
+    maxTokens: 4096,
+    timeoutMs: 120000,
+  },
+
+  // ── 输出路径 ────────────────────────────────────────────────
+  output: {
+    currentDir: 'docs/current',
+    historyDir: 'docs/history',
+    decisionsDir: 'docs/decisions',
+
+    // 是否生成 docs/current/INDEX.md（模块清单 + 功能索引）。
+    // 这张表解决「人按功能提问、文档按模块组织」的错位，建议保持开启。
+    index: true,
+  },
+}
