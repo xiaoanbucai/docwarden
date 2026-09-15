@@ -30,6 +30,10 @@
 
 在**你自己的仓库根目录**执行，两条路挑一条：
 
+> 下面的 `npx docwarden …` 从 npm 取这个工具；npm 那边还没发、或者你的机器不方便连
+> registry 时，把 `docwarden` 换成 `github:xiaoanbucai/docwarden` 就行，其余照抄：
+> `npx github:xiaoanbucai/docwarden init --no-vendor`。
+
 ```bash
 # A. 引用模式（GitHub 推荐）：脚本不进你的仓库
 npx docwarden init --no-vendor

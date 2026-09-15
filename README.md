@@ -64,6 +64,9 @@ CI 不需要联网取工具，公司内网也能跑；提示词就在你眼皮�
 
 ### 装完只做三件事
 
+> **两种写法等价**：`npx docwarden …` 从 npm 取，`npx github:xiaoanbucai/docwarden …`
+> 直接从 GitHub 取。npm 那边还没发、或者你的机器不方便连 registry 时，用后者，命令照抄。
+
 ```bash
 # ① 复核模块划分：唯一需要你下判断的地方（推断只看目录，看不懂业务边界）
 $EDITOR .knowledge.mjs
