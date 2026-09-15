@@ -283,6 +283,10 @@ npx docwarden mcp --root /path/to/your-project
 想用界面来点确认（`npx docwarden serve`）也行，或者直接在文档头部把 `doc_status`
 改成 `validated`、填上 `validated_by`。两边认的是同一套指纹，改哪边都算数。
 
+一个会有点意外的行为，先说明：**代码回滚会让失效的文档自动恢复「已验证」**。
+指纹重新对上了，文档与代码再次一致，它就重新可信；若失效期间有人改正文，正文指纹
+对不上，不会静默复活。这是设计，不是 bug。
+
 ---
 
 ## 想调整的时候
