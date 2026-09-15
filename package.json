@@ -65,6 +65,6 @@
     "test": "npm run check:deps && npm run test:freshness && npm run test:ci && npm run test:init && npm run test:selfcheck && npm run test:status && npm run test:persist && npm run test:ui-status && npm run test:mcp && npm run test:leak"
   },
   "devDependencies": {
-    "jsdom": "^30.0.1"
+    "jsdom": "^26.1.0"
   }
 }
