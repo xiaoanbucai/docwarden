@@ -137,24 +137,45 @@ function git(argv) {
   })
 }
 
+/**
+ * 从环境变量里取版本号，取之前先确认它确实属于**当前这个仓库**。
+ *
+ * 为什么不能直接信：CI 上没问题，`GITHUB_SHA` 就是当前提交。但同一个脚本在
+ * 「CI 容器里排查问题、或者在一个设了 CI 变量的 shell 里手动跑」时，那个提交
+ * 根本不在本地仓库里 —— diff 会以一句 `fatal: Invalid symmetric difference
+ * expression` 失败，报错指向的是 git 的语法，真正的原因却在环境变量上。
+ * 这类失败最难查：本机跑得好好的，一进 CI 就红。
+ *
+ * 所以按顺序挑第一个「能解析」的；解析不了就跳过并说明，交给调用方兜底。
+ */
+function revFromEnv(...candidates) {
+  for (const rev of candidates) {
+    // 新分支首次推送 / force push 时 before 是一串 0，那是约定，不算异常
+    if (!rev || /^0+$/.test(rev)) continue
+    try {
+      git(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`])
+      return rev
+    } catch {
+      warn(`环境变量给的版本 ${rev} 不在当前仓库里，忽略它。`)
+    }
+  }
+  return ''
+}
+
 function resolveRange() {
   const env = process.env
-  let base = args.get('base') || ''
-  let head = args.get('head') || ''
 
-  if (!base) {
-    base =
-      env.CI_MERGE_REQUEST_DIFF_BASE_SHA ||
-      env.CI_COMMIT_BEFORE_SHA ||
-      env.GITHUB_EVENT_BEFORE ||
-      ''
-  }
-  if (!head) head = env.CI_COMMIT_SHA || env.GITHUB_SHA || 'HEAD'
+  const base =
+    args.get('base') ||
+    revFromEnv(env.CI_MERGE_REQUEST_DIFF_BASE_SHA, env.CI_COMMIT_BEFORE_SHA, env.GITHUB_EVENT_BEFORE)
 
-  // 新分支首次推送 / force push 时，before 会是一串 0，必须回退
-  if (!base || /^0+$/.test(base)) base = 'HEAD~1'
+  const head = args.get('head') || revFromEnv(env.CI_COMMIT_SHA, env.GITHUB_SHA) || 'HEAD'
 
-  return { base, head }
+  // 没有任何可比对的起点时退回上一个提交。单提交仓库里这一条也会失败，
+  // 但那是「确实没有可比的基线」，不是环境问题，报错来自 git 是合理的。
+  const from = !base || /^0+$/.test(base) ? 'HEAD~1' : base
+
+  return { base: from, head }
 }
 
 function changedFiles(base, head) {

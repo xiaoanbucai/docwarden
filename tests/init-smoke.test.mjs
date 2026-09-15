@@ -443,13 +443,23 @@ try {
   const baseUrl = `http://127.0.0.1:${srv.address().port}/v1`
   const KEY = 'sk-test-not-a-real-key'
 
+  // 刻意塞一个「不属于这个夹具仓库」的 GITHUB_SHA，还原 GitHub Actions 上的真实情形：
+  // 那里 GITHUB_SHA 是真实仓库的提交，而这里是另一个临时仓库，那个提交根本不存在。
+  // 脚本要是照单全收，diff 就会以 `fatal: Invalid symmetric difference expression`
+  // 失败 —— 本机绿、CI 红，最难查的一类。所以这一行是故意的，别删。
+  const childEnv = { ...process.env, LLM_BASE_URL: baseUrl, LLM_MODEL: 'fake-doc-model', LLM_API_KEY: KEY }
+  for (const k of ['CI_COMMIT_SHA', 'CI_COMMIT_BEFORE_SHA', 'CI_MERGE_REQUEST_DIFF_BASE_SHA', 'GITHUB_EVENT_BEFORE']) {
+    delete childEnv[k]
+  }
+  childEnv.GITHUB_SHA = 'f'.repeat(40)
+
   let out = ''
   let boom = null
   let timedOut = false
   try {
     const r = await pexec(process.execPath, ['scripts/docs-update.mjs', '--mode', 'incremental', '--base=HEAD~1'], {
       cwd: WORK,
-      env: { ...process.env, LLM_BASE_URL: baseUrl, LLM_MODEL: 'fake-doc-model', LLM_API_KEY: KEY },
+      env: childEnv,
       // 限时是必需的：这一段有真实网络往返，子进程一旦卡住，整个套件会无限期挂住 ——
       // 现象是日志停在场景标题、没有任何报错，最难查。限时之后最坏也只是这一条失败，
       // 而且失败原因可读，不会拖死全量回归。
@@ -473,6 +483,27 @@ try {
   check(boom === null, timedOut
     ? '增量生成在 90 秒内没有结束（子进程卡住，见上方输出）'
     : `增量生成跑通（${boom ? '见上方输出' : out.trim().split('\n').slice(-1)[0]}）`)
+
+  // 上面那一跑必须是因为「忽略了外来的 GITHUB_SHA」才成功的，而不是碰巧
+  check(/不在当前仓库里/.test(out + (boom || '')), '外来的 GITHUB_SHA 被忽略，并且说明了原因')
+
+  // 反过来：环境变量给的提交在本仓库里真实存在时，必须照用 ——
+  // 否则 CI 上就退化成 HEAD 了，而 PR 场景下 HEAD 是合并提交，比对范围会不对。
+  // 让 base 与 head 指向同一个提交，变更文件为 0，不调模型，跑得也快。
+  const fixtureHead = git(['rev-parse', 'HEAD']).trim()
+  let sameRangeOut = ''
+  try {
+    const r2 = await pexec(process.execPath, ['scripts/docs-update.mjs', '--mode', 'incremental', `--base=${fixtureHead}`], {
+      cwd: WORK,
+      env: { ...childEnv, GITHUB_SHA: fixtureHead },
+      timeout: 90_000,
+      killSignal: 'SIGKILL',
+    })
+    sameRangeOut = r2.stdout
+  } catch (e) {
+    sameRangeOut = String(e.stdout || '') + String(e.stderr || '')
+  }
+  check(!/不在当前仓库里/.test(sameRangeOut), '环境变量给的是本仓库真实存在的提交时，照用不误（不降级成 HEAD）')
 
   const docPath = path.join(WORK, 'docs/current/modules/order.md')
   check(fs.existsSync(docPath), '生成了 order 模块的文档')
