@@ -1,5 +1,10 @@
 # docwarden（项目文档守护）
 
+[![CI](https://github.com/xiaoanbucai/docwarden/actions/workflows/ci.yml/badge.svg)](https://github.com/xiaoanbucai/docwarden/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+![Node](https://img.shields.io/badge/node-18%2B-green.svg)
+![dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)
+
 **给团队一份敢信的模块文档。** 跑在你的 GitHub Actions / GitLab CI 上自动生成，
 源码一变就标回「已失效」，没人确认过的绝不冒充结论。
 
@@ -11,6 +16,7 @@
 
 > 第一次用先看 [USAGE.md](./USAGE.md)（使用说明）：从装到接 CI 的逐步操作，
 > 包含「模型接口怎么配」这一步。本文件讲的是为什么这么设计、两条接入方式怎么选。
+> 想先看一页渲染好的产品介绍，打开 [docwarden.intro.html](./docwarden.intro.html)。
 
 ---
 
