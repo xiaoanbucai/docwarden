@@ -274,11 +274,26 @@ npx docwarden mcp --root /path/to/your-project
 
 **确认文档**：这是唯一必须由人做的一步，也是这套机制能成立的前提。
 
+最顺手的方式是一条命令（写文档头部，不调模型、不碰 git）：
+
+```bash
+npx docwarden validate order             # 确认单个模块
+npx docwarden validate order user        # 一次确认多个
+npx docwarden validate order --by=张三   # 取不到 git 署名时显式指定确认人
+npx docwarden validate order --force     # 失效文档直接背书当前版本（慎用）
+```
+
+确认人自动取 git 提交署名（`user.name`），和提交同源；取不到时必须 `--by` 显式给。
+它是一份声明，不是鉴权——名字谁都能填，可信度来自"敢用真名署名"。
+
 | 状态 | 含义 |
 |---|---|
 | **候选** | 模型刚生成，没有任何人确认过 |
 | **已验证** | 有人确认过，且确认之后源码与正文都没再变 |
 | **已失效** | 文档生成之后源码变了。它在描述旧代码，比没有文档更危险 |
+
+失效的文档，`validate` 默认拒绝直接确认——正常路径是重新生成一份再确认。
+如果你确认这次源码变更确实不影响这篇文档的结论，加 `--force` 直接背书当前版本。
 
 想用界面来点确认（`npx docwarden serve`）也行，或者直接在文档头部把 `doc_status`
 改成 `validated`、填上 `validated_by`。两边认的是同一套指纹，改哪边都算数。

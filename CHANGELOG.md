@@ -5,6 +5,14 @@
 
 ## [未发布]
 
+### 新增
+- **`docwarden validate <模块名>`**：人工确认模块文档的一条命令。写文档 front-matter，
+  不调模型、不碰 git。确认人自动取 git 提交署名（取不到用 `--by` 显式指定）；
+  失效文档默认拒绝直接确认，加 `--force` 表示背书"这次源码变更不影响本文档结论"。
+  vendor 与引用两种模式都可用。
+- 术语表 `CONTEXT.md` 与决策记录 `docs/adr/`（ADR-0001 状态写 front-matter 不设 status.json、
+  ADR-0002 MCP 永远只读，确认只能由人做出）。
+
 ### 计划中
 - `docwarden init` 支持 monorepo（一次在多个子包内安装）
 - 提供 Docker 一键起本地界面的镜像

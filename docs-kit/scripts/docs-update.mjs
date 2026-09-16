@@ -4,11 +4,14 @@
  *
  * 零依赖，Node 18+（用到内置 fetch、crypto）
  *
- * 四种模式，分别对应四个触发契机：
+ * 四种 CI 模式，分别对应四个触发契机：
  *   incremental  主干合并后，刷新受影响模块的 current/ 文档
  *   preview      PR 阶段，只产出影响预览，不写任何正式文件
  *   chapter      打 Release tag 后，生成版本演进章节
  *   audit        定时巡检，找出「代码变了但文档没跟上」的模块
+ *
+ * 另有一个本地维护模式（不调模型、不碰 git，给人跑的）：
+ *   validate     人工确认模块文档（--module=<名>，失效文档须 --force，确认人自动取 git 署名）
  *
  * 用法：
  *   node scripts/docs-update.mjs --mode incremental
@@ -17,6 +20,7 @@
  *   node scripts/docs-update.mjs --mode audit
  *   node scripts/docs-update.mjs --mode audit --fix      # 巡检并直接修复
  *   node scripts/docs-update.mjs --mode incremental --base=HEAD~5 --force
+ *   node scripts/docs-update.mjs --mode validate --module=order --force
  *
  *   # 不 vendor、直接引用工具时（GitHub Actions 里 `uses: <org>/docwarden@v1`），
  *   # 脚本与目标仓库不在同一个地方，要用 --root 指过去：
@@ -48,6 +52,8 @@ import {
   buildFrontmatter,
   upgradeSourceFingerprint,
   splitFeature,
+  applyValidation,
+  evaluateDoc,
 } from './lib/freshness.mjs'
 
 /**
@@ -983,8 +989,103 @@ async function runAudit(config, headSha) {
 
 /* ─────────────────────────── 入口 ─────────────────────────── */
 
+/* ──────────── validate 模式：人工确认，纯本地动作 ──────────── */
+
+/**
+ * 把模块文档标为「已验证」。这是整个机制里唯一必须由人做的一步，
+ * 也因此刻意做得最朴素：不调模型、不碰 git 流程、只改文档自己的 front-matter。
+ *
+ * 信任边界（ADR-0002）：确认只能由人做出。MCP 与 AI 助手永远拿不到这个能力。
+ *
+ * 确认人（validated_by）自动取 git 提交署名（user.name），与提交同源；
+ * 取不到（没配、或 CI 环境里没有 git 身份）就要求 --by=<名字> 显式传入。
+ * 它是一份声明，不是鉴权 —— 名字谁都能填，可信度来自"敢用真名署名"。
+ */
+async function runValidate(config) {
+  const names = String(args.get('module') || '')
+    .split(',').map((s) => s.trim()).filter(Boolean)
+  if (!names.length) {
+    throw new Error([
+      'validate 模式需要 --module=<模块名>（多个用逗号分隔）',
+      '  例如：node scripts/docs-update.mjs --mode validate --module=order,user',
+      '  可用模块名见 .knowledge.mjs 的 modules 段，或 docs/current/INDEX.md',
+    ].join('\n'))
+  }
+
+  let by = args.get('by') || ''
+  if (!by) {
+    try { by = git(['config', 'user.name']).trim() } catch { /* 没 git 或没配名字，下面统一报 */ }
+  }
+  if (!by) {
+    throw new Error([
+      '取不到确认人（git user.name 未配置）。',
+      '确认是要署名的 —— 请用 --by=<名字> 显式指定。',
+    ].join('\n'))
+  }
+
+  const currentDir = config.output?.currentDir || 'docs/current'
+
+  for (const name of names) {
+    const mod = config.modules.find((m) => m.name === name)
+    if (!mod) {
+      const known = config.modules.map((m) => m.name).join('、') || '（配置里一个模块都没有）'
+      throw new Error(`配置里没有叫 "${name}" 的模块。现有的：${known}`)
+    }
+
+    const docRel = `${currentDir}/modules/${name}.md`
+    const docAbs = resolve(ROOT, docRel)
+    const files = listModuleFiles(mod, config)
+    const st = evaluateDoc(ROOT, docAbs, files)
+
+    if (st.status === 'missing') {
+      throw new Error([
+        `模块 ${name} 还没有文档（${docRel} 不存在）。`,
+        '先跑一次生成（update --mode incremental），对空文档谈确认没有意义。',
+      ].join('\n'))
+    }
+
+    if (st.status === 'stale' && !FORCE) {
+      errors++
+      warn(`模块 ${name} 的文档已失效（源码在生成/确认之后变了），本次跳过。`)
+      warn('  正常路径是重新生成一份再确认；若你确认这次变更不影响该文档结论，加 --force 直接背书当前版本。')
+      continue
+    }
+
+    if (DRY_RUN) {
+      log(`（dry-run）模块 ${name} 将被标为已验证，确认人 ${by}${st.status === 'stale' ? '（--force 背书当前源码）' : ''}`)
+      continue
+    }
+
+    // 指纹换代（旧算法认得旧记录）：就地升级头部，不让算法换代白烧一次确认。
+    if (st.needsUpgrade) upgradeSourceFingerprint(docAbs, ROOT, files)
+    // 失效文档被 --force 确认 = 背书"当前这版源码"，记录的源码指纹必须跟上现在的代码，
+    // 否则确认完下一次判定还是 stale，等于白确认。
+    if (st.status === 'stale') upgradeSourceFingerprint(docAbs, ROOT, files)
+    applyValidation(docAbs, { by })
+
+    log(`模块 ${name} 已确认（validated_by: ${by}${st.status === 'stale' ? '，--force 背书当前源码' : ''}）`)
+  }
+
+  const done = names.length - errors
+  log(`确认完成 ${done}/${names.length}。本命令不提交、不调模型；索引将在下次 CI 扫描时同步呈现。`)
+}
+
 async function main() {
   const config = await loadConfig()
+
+  // validate 是纯本地动作（写 front-matter），不调模型也不碰 git 流程，
+  // 连 HEAD 都不需要 —— 单独放最前面，别让它背上别的模式的依赖。
+  if (MODE === 'validate') {
+    await runValidate(config)
+    flushPreview()
+    if (errors > 0) {
+      warn(`本次有 ${errors} 处失败，详见上方日志`)
+      process.exitCode = 1
+    } else {
+      log('完成')
+    }
+    return
+  }
 
   // 先把「模型配没配」检查在前面：这一步不通过就没必要往下走，
   // 更没必要先去扫一遍全仓库。audit 模式不调模型，跳过这项检查。

@@ -15,7 +15,7 @@ jsdom 已经装好了（`devDependencies`，约 21 MB）。**它只是测试用�
 ## 跑测试
 
 ```bash
-npm run test:all      # ★ 推荐：11 套全跑，自动起 / 收本地界面与假模型
+npm run test:all      # ★ 推荐：12 套全跑，自动起 / 收本地界面与假模型
 ```
 
 手工跑也行，但要自己管好两个后台服务：
@@ -23,7 +23,7 @@ npm run test:all      # ★ 推荐：11 套全跑，自动起 / 收本地界面�
 ```bash
 npm start             # 另一个终端：主服务（5 个套件会连 127.0.0.1:5173）
 npm run fake-llm      # 另一个终端：假模型（notify 第一次调用故意 500，只有 test:retry 要它）
-npm test              # 10 套，不含 test:retry
+npm test              # 11 套，不含 test:retry
 npm run test:retry    # 单独一个：重试是否真的只补失败项
 ```
 
@@ -36,6 +36,7 @@ npm run test:retry    # 单独一个：重试是否真的只补失败项
 | `test:freshness` | **指纹与状态只有一份实现**：认得旧算法指纹、不会误触发重新生成、旧状态文件可迁移 | 无 |
 | `test:ci` | **CI 主线在真实 git 仓库里跑一遍**（`--mode audit`，不调模型）：旧文档不误判、确认保留、索引带确认列 | 无（需本地有 `git`） |
 | `test:init` | **安装器**：真装一遍再验收 —— 产出齐全、幂等不冲掉人的配置、预演不落盘、引用模式不塞脚本、doctor 能发现配置腐烂与占位符没换、装完真能跑 audit | 无（需本地有 `git`） |
+| `test:validate` | **人工确认命令**：候选可确认并署名、失效默认拒绝且指路 --force、--force 后源码指纹跟上当前代码、不产生 status.json、dry-run 不落盘 | 无（需本地有 `git`） |
 | `test:selfcheck` | 界面内联脚本语法 + 新增元素/函数是否既声明又被引用 | 无 |
 | `test:status` | **文档新鲜度的完整生命周期**（候选→已验证→失效→复原→作废） | 主服务 |
 | `test:persist` | 刷新页面会不会白跑（会话留存） | 主服务 |

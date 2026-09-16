@@ -5,12 +5,13 @@
  * 一条命令装进任何仓库：
  *   npx docwarden init
  *
- * 五个子命令，按一个使用者会走的顺序排列：
- *   init     装进当前仓库（探测结构 → 生成配置 → 拷贝脚本与 CI）
- *   doctor   体检：缺什么、哪里烂了、怎么补
- *   update   在本地跑一次 CI 用的那份脚本
- *   serve    起本地工作台（浏览器界面）
- *   mcp      起 MCP 服务，把知识库连同状态交给 AI 编程助手
+ * 六个子命令，按一个使用者会走的顺序排列：
+ *   init      装进当前仓库（探测结构 → 生成配置 → 拷贝脚本与 CI）
+ *   doctor    体检：缺什么、哪里烂了、怎么补
+ *   update    在本地跑一次 CI 用的那份脚本
+ *   validate  人工确认模块文档（写 front-matter，不调模型、不碰 git）
+ *   serve     起本地工作台（浏览器界面）
+ *   mcp       起 MCP 服务，把知识库连同状态交给 AI 编程助手
  *
  * 参数解析刻意做得很笨：只认 `--k=v` 和 `--k v` 两种写法，不做别名、不做简写。
  * 一个安装器如果连自己的参数都猜，使用者排查起来会很痛苦。
@@ -63,6 +64,8 @@ docwarden v${pkg.version} —— 在你的 GitHub Actions / GitLab CI 上，把�
             引用模式下会自动用工具自带的脚本，并把 --root 指向你当前目录。
 
 本地辅助（可选，跟 CI 上是同一套逻辑，用来先看效果）
+  validate 人工确认模块文档：写 front-matter，不调模型、不碰 git。
+            确认人自动取 git 提交署名，取不到用 --by 指定。
   serve     起本地界面：扫描 → 划分模块 → 逐篇生成 → 逐篇人工确认。
   mcp       把知识库连同每篇的确认状态交给 AI 编程助手（MCP）。
 
@@ -80,6 +83,12 @@ update 选项
     npx docwarden update --mode incremental --base=HEAD~5 --dry-run
     npx docwarden update --mode chapter --version=v1.2.0
 
+validate 选项
+  <模块名>...             要确认的模块（可一次多个，如：validate order user）
+  --by <名字>             确认人。默认自动取 git 提交署名，取不到时必须给
+  --force                 文档已失效时直接背书当前版本（正常路径是重新生成再确认）
+  --dir <路径>            目标仓库，默认当前目录
+
 serve / mcp 选项
   --port <端口>           serve 的监听端口，默认 5173
   --no-open               serve 不自动打开浏览器
@@ -92,6 +101,8 @@ serve / mcp 选项
   npx docwarden init --dry-run            # 先看看会写哪些文件
   npx docwarden doctor                    # 装完先体检
   npx docwarden update --mode audit       # 不花钱的巡检，随时可跑
+  npx docwarden validate order            # 人工确认 order 模块的文档
+  npx docwarden validate order --force    # 失效文档直接背书当前版本
 
 文档
   USAGE.md             ★ 使用说明：从零到跑通的逐步操作（含模型怎么配）
@@ -190,6 +201,38 @@ switch (cmd) {
     const hasRoot = rest.some((a) => a === '--root' || a.startsWith('--root='))
     console.log(`（引用模式：用工具自带的脚本，目标仓库 ${targetDir}）`)
     runNodeScript(bundled, hasRoot ? rest : [...rest, '--root', targetDir])
+    break
+  }
+
+  case 'validate': {
+    // 与 update 同一条分发路（本地脚本优先、引用模式用自带脚本加 --root），
+    // 但参数收得更紧：模块名是位置参数，其余只放行 by/force。
+    const names = rest.filter((a) => !a.startsWith('--'))
+    if (!names.length) {
+      console.error('\n❌ validate 需要至少一个模块名。例如：npx docwarden validate order\n   可用模块名见 docs/current/INDEX.md 或仓库根的 .knowledge.mjs\n')
+      process.exit(1)
+    }
+    const pass = ['--mode', 'validate', '--module=' + names.join(',')]
+    if (flags.has('by')) pass.push('--by=' + flags.get('by'))
+    if (flags.get('force') === 'true') pass.push('--force=true')
+
+    const local = join(targetDir, 'scripts/docs-update.mjs')
+    if (existsSync(local)) {
+      runNodeScript(local, pass)
+      break
+    }
+    const bundled = join(PKG_ROOT, 'docs-kit/scripts/docs-update.mjs')
+    if (!existsSync(bundled)) {
+      console.error([
+        '',
+        `❌ 既没有 ${local}，工具自带的脚本也不在（安装包不完整？）`,
+        '   跑一次 npx docwarden init 可以补齐 vendor 模式所需的一切。',
+        '',
+      ].join('\n'))
+      process.exit(1)
+    }
+    console.log(`（用工具自带的脚本，目标仓库 ${targetDir}）`)
+    runNodeScript(bundled, [...pass, '--root', targetDir])
     break
   }
 

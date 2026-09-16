@@ -14,7 +14,7 @@
  * 它**不会**去杀掉已经在占用端口的进程 —— 那可能是你正在用的服务。
  * 端口被占就报错退出，由你自己决定怎么处理。
  *
- *   node tools/run-all-tests.mjs                 跑 package.json 里那 10 套
+ *   node tools/run-all-tests.mjs                 跑 package.json 里那 11 套
  *   node tools/run-all-tests.mjs --with-retry    连 ui-retry 一起跑（会额外起假模型）
  */
 import { spawn, execFile } from 'node:child_process'
@@ -34,6 +34,7 @@ const SUITES = [
   ['指纹与状态', 'tests/freshness-parity.test.mjs'],
   ['CI 脚本', 'tests/ci-smoke.test.mjs'],
   ['安装器', 'tests/init-smoke.test.mjs'],
+  ['本地确认命令', 'tests/validate-cli.test.mjs'],
   ['界面自检', 'tests/ui-selfcheck.test.mjs'],
   ['状态生命周期', 'tests/status-lifecycle.test.mjs'],
   ['会话持久化', 'tests/ui-persist.test.mjs'],
